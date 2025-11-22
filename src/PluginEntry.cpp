@@ -12,6 +12,8 @@
 #include "handlers/ThreadHandler.h"
 #include "handlers/ModuleHandler.h"
 #include "handlers/EventCallbackHandler.h"
+#include "handlers/ScriptHandler.h"
+#include "handlers/ContextHandler.h"
 #include "communication/MCPHttpServer.h"
 #include <windows.h>
 #include <filesystem>
@@ -19,7 +21,19 @@
 
 // 插件版本信息
 #define PLUGIN_VERSION "1.0.1"
-#define PLUGIN_NAME "x64dbg MCP Server"
+
+// 可由 CMake 覆盖：PLUGIN_DISPLAY_NAME, PLUGIN_DIR_NAME
+#ifndef PLUGIN_DISPLAY_NAME
+#define PLUGIN_DISPLAY_NAME "x64dbg MCP Server"
+#endif
+
+#ifndef PLUGIN_DIR_NAME
+#define PLUGIN_DIR_NAME "x64dbg-mcp"
+#endif
+
+#ifndef PLUGIN_NAME
+#define PLUGIN_NAME PLUGIN_DISPLAY_NAME
+#endif
 
 // 全局变量
 static int g_pluginHandle = 0;
@@ -141,7 +155,9 @@ static void CB_MenuEntry(CBTYPE cbType, void* callbackInfo) {
         }
         else if (info->hEntry == MENU_ABOUT) {
             // 关于
-            _plugin_logputs("[MCP] x64dbg MCP Server Plugin v1.0.1");
+            char aboutMsg[256];
+            sprintf_s(aboutMsg, "[MCP] %s Plugin v1.0.1", PLUGIN_DISPLAY_NAME);
+            _plugin_logputs(aboutMsg);
             _plugin_logputs("[MCP] Provides JSON-RPC debugging interface");
             _plugin_logputs("[MCP] https://github.com/SetsunaYukiOvO/x64dbg-mcp");
         }
@@ -165,6 +181,29 @@ static void RegisterAllMethods() {
     MCP::StackHandler::RegisterMethods();
     MCP::ThreadHandler::RegisterMethods();
     MCP::ModuleHandler::RegisterMethods();
+    
+    // Register script execution methods
+    auto& dispatcher = MCP::MethodDispatcher::Instance();
+    dispatcher.RegisterMethod("script.execute", [](const json& params) -> json {
+        return ScriptHandler::execute(params);
+    });
+    dispatcher.RegisterMethod("script.execute_batch", [](const json& params) -> json {
+        return ScriptHandler::executeBatch(params);
+    });
+    dispatcher.RegisterMethod("script.get_last_result", [](const json& params) -> json {
+        return ScriptHandler::getLastResult(params);
+    });
+    
+    // Register context snapshot methods
+    dispatcher.RegisterMethod("context.get_snapshot", [](const json& params) -> json {
+        return ContextHandler::getSnapshot(params);
+    });
+    dispatcher.RegisterMethod("context.get_basic", [](const json& params) -> json {
+        return ContextHandler::getBasicContext(params);
+    });
+    dispatcher.RegisterMethod("context.compare_snapshots", [](const json& params) -> json {
+        return ContextHandler::compareSnapshots(params);
+    });
     
     MCP::Logger::Info("All JSON-RPC methods registered");
 }
@@ -210,27 +249,31 @@ extern "C" __declspec(dllexport) bool pluginit(PLUG_INITSTRUCT* initStruct) {
             // 替换文件名为日志文件名
             char* lastSlash = strrchr(logPath, '\\');
             if (lastSlash) {
-                strcpy_s(lastSlash + 1, MAX_PATH - (lastSlash - logPath + 1), "x64dbg-mcp.log");
+                std::string logName = std::string(PLUGIN_DIR_NAME) + ".log";
+                strcpy_s(lastSlash + 1, MAX_PATH - (lastSlash - logPath + 1), logName.c_str());
             }
         }
         
         // 如果获取路径失败，使用默认路径
         if (logPath[0] == 0) {
-            strcpy_s(logPath, "x64dbg-mcp.log");
+            std::string logName = std::string(PLUGIN_DIR_NAME) + ".log";
+            strcpy_s(logPath, logName.c_str());
         }
         
         // 初始化日志系统
         MCP::Logger::Initialize(logPath, MCP::LogLevel::Info, true);
-        MCP::Logger::Info("x64dbg MCP Server Plugin v1.0.1 initializing...");
+        char initMsg[256];
+        sprintf_s(initMsg, "%s Plugin v1.0.1 initializing...", PLUGIN_DISPLAY_NAME);
+        MCP::Logger::Info(initMsg);
         _plugin_logprintf("[MCP] Log file: %s\n", logPath);
         
-        _plugin_logprintf("[MCP] x64dbg MCP Server v%s\n", PLUGIN_VERSION);
+        _plugin_logprintf("[MCP] %s v%s\n", PLUGIN_DISPLAY_NAME, PLUGIN_VERSION);
         _plugin_logputs("[MCP] https://github.com/SetsunaYukiOvO/x64dbg-mcp");
         
         // 加载配置（如果不存在则创建默认配置）
         try {
             auto& config = MCP::ConfigManager::Instance();
-            std::string configPath = "x64dbg-mcp\\config.json";
+            std::string configPath = std::string(PLUGIN_DIR_NAME) + "\\config.json";
             
             // 检查配置文件是否存在
             if (!std::filesystem::exists(configPath)) {
@@ -238,7 +281,7 @@ extern "C" __declspec(dllexport) bool pluginit(PLUG_INITSTRUCT* initStruct) {
                 _plugin_logputs("[MCP] Creating default config.json...");
                 
                 // 创建目录
-                std::filesystem::create_directories("x64dbg-mcp");
+                std::filesystem::create_directories(PLUGIN_DIR_NAME);
                 
                 // 创建默认配置
                 std::ofstream configFile(configPath);
@@ -269,13 +312,13 @@ extern "C" __declspec(dllexport) bool pluginit(PLUG_INITSTRUCT* initStruct) {
       "script.*"
     ]
   },
-  "logging": {
-    "enabled": true,
-    "level": "info",
-    "file": "x64dbg_mcp.log",
-    "max_file_size_mb": 10,
-    "console_output": true
-  },
+    "logging": {
+        "enabled": true,
+        "level": "info",
+        "file": "plugin.log",
+        "max_file_size_mb": 10,
+        "console_output": true
+    },
   "timeout": {
     "request_timeout_ms": 30000,
     "step_timeout_ms": 10000,

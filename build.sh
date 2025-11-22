@@ -14,6 +14,7 @@ NC='\033[0m' # No Color
 # 默认配置
 BUILD_TYPE="Release"
 CLEAN_BUILD="NO"
+XDBG_ARCH="x64"
 
 # 显示帮助
 show_help() {
@@ -57,6 +58,15 @@ while [[ $# -gt 0 ]]; do
         --clean)
             CLEAN_BUILD="YES"
             shift
+            ;;
+        --arch)
+            if [ -n "$2" ]; then
+                XDBG_ARCH="$2"
+                shift 2
+            else
+                echo "Missing value for --arch"
+                exit 1
+            fi
             ;;
         --help)
             show_help
@@ -132,9 +142,16 @@ echo ""
 echo "[2/4] Configuring CMake..."
 echo ""
 
+VCPKG_TRIPLET="x64-windows"
+if [ "$XDBG_ARCH" = "x86" ]; then
+    VCPKG_TRIPLET="x86-windows"
+fi
+
 cmake -B build \
     -DCMAKE_TOOLCHAIN_FILE="$VCPKG_TOOLCHAIN" \
-    -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+    -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+    -DVCPKG_TARGET_TRIPLET=$VCPKG_TRIPLET \
+    -DXDBG_ARCH=$XDBG_ARCH
 
 # 编译
 echo ""

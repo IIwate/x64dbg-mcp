@@ -14,11 +14,16 @@ REM 检查参数
 set "BUILD_TYPE=Release"
 set "CLEAN_BUILD=NO"
 set "GENERATOR=Visual Studio 17 2022"
+set "XDBG_ARCH=x64"  
 
 :parse_args
 if "%~1"=="" goto :end_parse
 if /i "%~1"=="--debug" set "BUILD_TYPE=Debug"
 if /i "%~1"=="--clean" set "CLEAN_BUILD=YES"
+if /i "%~1"=="--arch" (
+    if "%~2"=="x86" set "XDBG_ARCH=x86" & shift & shift
+    if "%~2"=="x64" set "XDBG_ARCH=x64" & shift & shift
+)
 if /i "%~1"=="--help" goto :show_help
 shift
 goto :parse_args
@@ -28,6 +33,7 @@ REM 显示配置
 echo Build Configuration:
 echo   Build Type: %BUILD_TYPE%
 echo   Generator: %GENERATOR%
+echo   Target Arch: %XDBG_ARCH%
 echo   Clean Build: %CLEAN_BUILD%
 echo.
 
@@ -79,9 +85,19 @@ REM 配置 CMake
 echo [2/4] Configuring CMake...
 echo.
 
-cmake -B build -G "%GENERATOR%" -A x64 ^
+REM 选择 CMake -A 参数与 vcpkg triplet
+set "CMAKE_ARCH_ARG=-A x64"
+set "VCPKG_TRIPLET=x64-windows"
+if "%XDBG_ARCH%"=="x86" (
+    set "CMAKE_ARCH_ARG=-A Win32"
+    set "VCPKG_TRIPLET=x86-windows"
+)
+
+cmake -B build -G "%GENERATOR%" %CMAKE_ARCH_ARG% ^
     -DCMAKE_TOOLCHAIN_FILE="%VCPKG_TOOLCHAIN%" ^
-    -DCMAKE_BUILD_TYPE=%BUILD_TYPE%
+    -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
+    -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% ^
+    -DXDBG_ARCH=%XDBG_ARCH%
 
 if errorlevel 1 (
     echo.
@@ -103,7 +119,11 @@ if errorlevel 1 (
 )
 
 REM 检查输出
-set "OUTPUT_FILE=build\bin\%BUILD_TYPE%\x64dbg_mcp.dp64"
+if "%XDBG_ARCH%"=="x86" (
+    set "OUTPUT_FILE=build\bin\%BUILD_TYPE%\x32dbg_mcp.dp32"
+) else (
+    set "OUTPUT_FILE=build\bin\%BUILD_TYPE%\x64dbg_mcp.dp64"
+)
 if not exist "%OUTPUT_FILE%" (
     echo.
     echo [ERROR] Output file not found: %OUTPUT_FILE%
@@ -124,8 +144,13 @@ if errorlevel 1 (
 )
 
 REM 检查输出
-set "OUTPUT_FILE=build\bin\%BUILD_TYPE%\x64dbg_mcp.dp64"
-set "MCP_SERVER_EXE=build\bin\%BUILD_TYPE%\x64dbg-mcp-server.exe"
+if "%XDBG_ARCH%"=="x86" (
+    set "OUTPUT_FILE=build\bin\%BUILD_TYPE%\x32dbg_mcp.dp32"
+    set "MCP_SERVER_EXE=build\bin\%BUILD_TYPE%\x32dbg-mcp-server.exe"
+) else (
+    set "OUTPUT_FILE=build\bin\%BUILD_TYPE%\x64dbg_mcp.dp64"
+    set "MCP_SERVER_EXE=build\bin\%BUILD_TYPE%\x64dbg-mcp-server.exe"
+)
 
 if not exist "%OUTPUT_FILE%" (
     echo.
@@ -150,23 +175,33 @@ if exist "%MCP_SERVER_EXE%" (
 echo.
 
 REM 检查 x64dbg 安装
-set "X64DBG_DIR=C:\x64dbg"
-set "X64DBG_FOUND=NO"
-
-if exist "%X64DBG_DIR%\x64\x64dbg.exe" (
-    set "X64DBG_FOUND=YES"
-    set "X64DBG_PLUGINS=%X64DBG_DIR%\x64\plugins"
-) else if exist "%X64DBG_DIR%\release\x64\x64dbg.exe" (
-    set "X64DBG_FOUND=YES"
-    set "X64DBG_PLUGINS=%X64DBG_DIR%\release\x64\plugins"
-) else if exist "%X64DBG_DIR%\x64dbg.exe" (
-    set "X64DBG_FOUND=YES"
-    set "X64DBG_PLUGINS=%X64DBG_DIR%\plugins"
+set "XDBG_DIR=C:\x64dbg"
+set "XDBG_PLUGINS="
+set "XDBG_FOUND=NO"
+if "%XDBG_ARCH%"=="x86" (
+    set "XDBG_DIR=C:\x32dbg"
 )
 
-if "%X64DBG_FOUND%"=="YES" (
-    echo Found x64dbg at: %X64DBG_DIR%
-    echo Plugin directory: %X64DBG_PLUGINS%
+if exist "%XDBG_DIR%\x64\x64dbg.exe" (
+    set "XDBG_FOUND=YES"
+    set "XDBG_PLUGINS=%XDBG_DIR%\x64\plugins"
+) else if exist "%XDBG_DIR%\release\x64\x64dbg.exe" (
+    set "XDBG_FOUND=YES"
+    set "XDBG_PLUGINS=%XDBG_DIR%\release\x64\plugins"
+) else if exist "%XDBG_DIR%\x64dbg.exe" (
+    set "XDBG_FOUND=YES"
+    set "XDBG_PLUGINS=%XDBG_DIR%\plugins"
+) else if exist "%XDBG_DIR%\x86\x32dbg.exe" (
+    set "XDBG_FOUND=YES"
+    set "XDBG_PLUGINS=%XDBG_DIR%\x86\plugins"
+) else if exist "%XDBG_DIR%\x32dbg.exe" (
+    set "XDBG_FOUND=YES"
+    set "XDBG_PLUGINS=%XDBG_DIR%\plugins"
+)
+
+if "%XDBG_FOUND%"=="YES" (
+    echo Found xdbg at: %XDBG_DIR%
+    echo Plugin directory: %XDBG_PLUGINS%
     echo.
     
     choice /C YN /M "Do you want to install the plugin to x64dbg"

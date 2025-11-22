@@ -296,4 +296,123 @@ Examples:
 # Debug output: build\bin\Debug\x64dbg_mcp.dp64
 ```
 
+## Advanced Features (v1.1.0+)
+
+### Script Execution
+
+Execute x64dbg commands programmatically:
+
+```python
+# Execute single command
+response = client.send_request("script.execute", {
+    "command": "bp MessageBoxA"
+})
+
+# Execute batch commands
+response = client.send_request("script.execute_batch", {
+    "commands": [
+        "log \"Starting analysis...\"",
+        "bp kernel32.CreateFileW",
+        "bp kernel32.WriteFile",
+        "run"
+    ],
+    "stop_on_error": True  # Stop if any command fails
+})
+
+# Get last command result
+response = client.send_request("script.get_last_result")
+```
+
+### Context Snapshots
+
+Capture and compare debugging state:
+
+```python
+# Capture initial state
+snapshot1 = client.send_request("context.get_snapshot", {
+    "include_stack": True,
+    "include_threads": True,
+    "include_modules": True,
+    "include_breakpoints": True
+})
+
+# Execute some steps
+client.send_request("debug.step_over")
+
+# Capture new state
+snapshot2 = client.send_request("context.get_snapshot", {
+    "include_stack": True,
+    "include_threads": False,  # Skip for faster capture
+    "include_modules": False,
+    "include_breakpoints": False
+})
+
+# Compare snapshots to see what changed
+diff = client.send_request("context.compare_snapshots", {
+    "snapshot1": snapshot1["result"],
+    "snapshot2": snapshot2["result"]
+})
+
+print("Changes:", diff["result"]["has_differences"])
+print("Register changes:", diff["result"]["differences"].get("registers", []))
+```
+
+### Quick Context Check
+
+```python
+# Get basic context (registers + state only)
+context = client.send_request("context.get_basic")
+print("Registers:", context["result"]["registers"])
+print("Is debugging:", context["result"]["state"]["is_debugging"])
+```
+
+### Automated Analysis Workflow
+
+```python
+# 1. Set up environment
+client.send_request("script.execute_batch", {
+    "commands": [
+        "bp VirtualAlloc",
+        "bp VirtualProtect",
+        "run"
+    ]
+})
+
+# 2. Capture state at breakpoint
+bp_snapshot = client.send_request("context.get_snapshot", {
+    "include_stack": True
+})
+
+# 3. Analyze with scripts
+client.send_request("script.execute_batch", {
+    "commands": [
+        "log \"VirtualAlloc called!\"",
+        "? rcx",
+        "? rdx"
+    ]
+})
+
+# 4. Continue and compare
+client.send_request("debug.run")
+after = client.send_request("context.get_snapshot")
+diff = client.send_request("context.compare_snapshots", {
+    "snapshot1": bp_snapshot["result"],
+    "snapshot2": after["result"]
+})
+```
+
+### Example Scripts
+
+Check the `examples/` directory:
+
+- `python_client_http.py` - Basic HTTP client
+- `advanced_features_demo.py` - v1.1.0+ features demo
+
+Run the demo:
+
+```powershell
+cd examples
+python advanced_features_demo.py
+```
+
 ## Next Steps

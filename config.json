@@ -21,7 +21,8 @@
       "thread.*",
       "stack.*",
       "comment.*",
-      "script.*"
+      "script.*",
+      "context.*"
     ]
   },
   "logging": {

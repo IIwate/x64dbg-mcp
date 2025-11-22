@@ -66,7 +66,7 @@ std::vector<ThreadInfo> ThreadManager::GetThreadList() {
                 // 尝试获取线程上下文
                 // 注意：进程必须处于暂停状态才能成功获取
                 if (GetThreadContext(hThread, &ctx)) {
-#ifdef _WIN64
+#ifdef XDBG_ARCH_X64
                     info.rsp = ctx.Rsp;
                     info.rbp = ctx.Rbp;
                     // 验证 RIP（应该与 ThreadCip 一致）
@@ -80,7 +80,7 @@ std::vector<ThreadInfo> ThreadManager::GetThreadList() {
                         info.rip = ctx.Eip;
                     }
 #endif
-                    LOG_TRACE("Successfully retrieved context for thread {}: RIP=0x{:X}, RSP=0x{:X}, RBP=0x{:X}", 
+                    LOG_TRACE("Successfully retrieved context for thread {}: IP=0x{:X}, SP=0x{:X}, BP=0x{:X}", 
                              info.id, info.rip, info.rsp, info.rbp);
                 } else {
                     // GetThreadContext 失败，使用默认值

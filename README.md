@@ -9,15 +9,33 @@ A Model Context Protocol (MCP) server implementation for x64dbg, enabling remote
 - **JSON-RPC 2.0 Protocol**: Standard, language-agnostic interface
 - **HTTP + SSE Communication**: Modern web-based integration via Server-Sent Events
 - **MCP Protocol Support**: Compatible with Model Context Protocol for AI agent integration
-- **Comprehensive Debugging API**: 
-  - Execution control (run, pause, step)
-  - Memory read/write/search
-  - Register access (50+ registers)
-  - Breakpoint management (software, hardware, memory)
+- **Comprehensive Debugging API (55+ methods)**: 
+  - Execution control (run, pause, step, run_to)
+  - Memory read/write/search/allocate
+  - Register access (50+ registers including GPR, SSE, AVX)
+  - Breakpoint management (software, hardware, memory, conditional, logging)
   - Disassembly and symbol resolution
+  - Thread management (list, switch, suspend, resume)
+  - Stack trace and analysis
+  - **Script execution** (execute x64dbg commands, batch operations)
+  - **Context snapshots** (capture and compare debugging state)
   - Event notifications via SSE
 - **Security**: Permission-based access control
 - **Extensible**: Plugin architecture for custom methods
+
+## What's New in v1.1.0
+
+- ✨ **Script Execution API**: Execute x64dbg commands programmatically
+  - `script.execute`: Run single x64dbg command
+  - `script.execute_batch`: Execute multiple commands with error handling
+  - `script.get_last_result`: Get last command execution result
+
+- 🔍 **Context Snapshot API**: Capture and compare debugging state
+  - `context.get_snapshot`: Full debugging context snapshot
+  - `context.get_basic`: Quick register + state snapshot
+  - `context.compare_snapshots`: Compare two snapshots to find differences
+
+- 📊 **Enhanced Automation**: Combine scripting with snapshots for powerful workflows
 
 ## Building from Source
 
@@ -86,7 +104,7 @@ cmake --build build --config Release
 ```
 
 5. **Output**:
-- Plugin file: `build\bin\Release\x64dbg_mcp.dp64` (approximately 445 KB)
+- Plugin file: `build\bin\Release\x64dbg_mcp.dp64` (approximately 611 KB)
 
 ## Installation
 

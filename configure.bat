@@ -4,12 +4,19 @@ REM Usage: configure.bat [SDK_PATH]
 
 setlocal
 
-REM Check if SDK path is provided as argument
+REM Check if SDK path is provided as first argument
+set "XDBG_ARCH=x64"
 if "%~1" NEQ "" (
-    set X64DBG_SDK=%~1
+    set XDBG_SDK=%~1
 ) else (
     REM Prompt user for SDK path
-    set /p X64DBG_SDK="Enter x64dbg SDK path (e.g., C:\x64dbg\pluginsdk): "
+    set /p XDBG_SDK="Enter xdbg SDK path (e.g., C:\x64dbg\pluginsdk or C:\x32dbg\pluginsdk): "
+)
+
+REM Check optional arch argument
+if "%~2" NEQ "" (
+    if /i "%~2"=="x86" set "XDBG_ARCH=x86"
+    if /i "%~2"=="x64" set "XDBG_ARCH=x64"
 )
 
 REM Set vcpkg path (use environment variable or prompt)
@@ -32,14 +39,19 @@ if exist build (
 
 REM Run CMake configuration
 echo Configuring project...
-echo SDK Path: %X64DBG_SDK%
+echo SDK Path: %XDBG_SDK%
+echo Target Arch: %XDBG_ARCH%
 echo vcpkg: %VCPKG_ROOT%
 echo.
 
+set "VCPKG_TRIPLET=x64-windows"
+if "%XDBG_ARCH%"=="x86" set "VCPKG_TRIPLET=x86-windows"
+
 cmake -B build ^
-    -DX64DBG_SDK_DIR="%X64DBG_SDK%" ^
+    -DXDBG_SDK_DIR="%XDBG_SDK%" ^
     -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
-    -DVCPKG_TARGET_TRIPLET=x64-windows
+    -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% ^
+    -DXDBG_ARCH=%XDBG_ARCH%
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

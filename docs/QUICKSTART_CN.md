@@ -296,4 +296,123 @@ build.bat [选项]
 # 调试输出：build\bin\Debug\x64dbg_mcp.dp64
 ```
 
+## 高级功能（v1.1.0+）
+
+### 脚本执行
+
+以编程方式执行 x64dbg 命令：
+
+```python
+# 执行单个命令
+response = client.send_request("script.execute", {
+    "command": "bp MessageBoxA"
+})
+
+# 批量执行命令
+response = client.send_request("script.execute_batch", {
+    "commands": [
+        "log \"开始分析...\"",
+        "bp kernel32.CreateFileW",
+        "bp kernel32.WriteFile",
+        "run"
+    ],
+    "stop_on_error": True  # 如果任何命令失败则停止
+})
+
+# 获取最后一次命令执行结果
+response = client.send_request("script.get_last_result")
+```
+
+### 上下文快照
+
+捕获和比较调试状态：
+
+```python
+# 捕获初始状态
+snapshot1 = client.send_request("context.get_snapshot", {
+    "include_stack": True,
+    "include_threads": True,
+    "include_modules": True,
+    "include_breakpoints": True
+})
+
+# 执行一些步骤
+client.send_request("debug.step_over")
+
+# 捕获新状态
+snapshot2 = client.send_request("context.get_snapshot", {
+    "include_stack": True,
+    "include_threads": False,  # 跳过线程以加快捕获速度
+    "include_modules": False,
+    "include_breakpoints": False
+})
+
+# 比较快照查看变化
+diff = client.send_request("context.compare_snapshots", {
+    "snapshot1": snapshot1["result"],
+    "snapshot2": snapshot2["result"]
+})
+
+print("检测到变化:", diff["result"]["has_differences"])
+print("寄存器变化:", diff["result"]["differences"].get("registers", []))
+```
+
+### 快速上下文检查
+
+```python
+# 获取基础上下文（仅寄存器 + 状态）
+context = client.send_request("context.get_basic")
+print("寄存器:", context["result"]["registers"])
+print("正在调试:", context["result"]["state"]["is_debugging"])
+```
+
+### 自动化分析工作流
+
+```python
+# 1. 设置环境
+client.send_request("script.execute_batch", {
+    "commands": [
+        "bp VirtualAlloc",
+        "bp VirtualProtect",
+        "run"
+    ]
+})
+
+# 2. 在断点处捕获状态
+bp_snapshot = client.send_request("context.get_snapshot", {
+    "include_stack": True
+})
+
+# 3. 使用脚本分析
+client.send_request("script.execute_batch", {
+    "commands": [
+        "log \"VirtualAlloc 被调用！\"",
+        "? rcx",
+        "? rdx"
+    ]
+})
+
+# 4. 继续并比较
+client.send_request("debug.run")
+after = client.send_request("context.get_snapshot")
+diff = client.send_request("context.compare_snapshots", {
+    "snapshot1": bp_snapshot["result"],
+    "snapshot2": after["result"]
+})
+```
+
+### 示例脚本
+
+查看 `examples/` 目录：
+
+- `python_client_http.py` - 基础 HTTP 客户端
+- `advanced_features_demo.py` - v1.1.0+ 功能演示
+
+运行演示：
+
+```powershell
+cd examples
+python advanced_features_demo.py
+```
+
 ## 下一步
