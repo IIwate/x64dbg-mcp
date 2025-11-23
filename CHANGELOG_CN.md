@@ -5,6 +5,33 @@ x64dbg MCP 服务器插件的所有重要更改都将记录在此文件中。
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
+## [1.2.0] - 2025-11-22
+
+### 新增
+- **双架构支持**：插件现已支持 x64 和 x86 架构
+  - 使用 `.\build.bat` 或 `.\build.bat --arch x64` 构建 x64dbg（64位）版本
+  - 使用 `.\build.bat --arch x86` 构建 x32dbg（32位）版本
+  - 独立的输出文件：`x64dbg_mcp.dp64` 和 `x32dbg_mcp.dp32`
+- **架构感知的寄存器处理**
+  - x64：RAX, RBX, RCX, RDX, RSI, RDI, RSP, RBP, RIP, R8-R15
+  - x86：EAX, EBX, ECX, EDX, ESI, EDI, ESP, EBP, EIP
+- **统一的 SDK 结构**：两个架构共享来自 `include/x64dbg-pluginsdk` 的相同头文件
+
+### 变更
+- CMake 构建系统现在使用 `XDBG_ARCH` 变量选择架构
+- 构建脚本（`build.bat`、`configure.bat`、`build.sh`）接受 `--arch` 参数
+- 使用 `XDBG_ARCH_X64` 和 `XDBG_ARCH_X86` 宏进行条件编译
+- 栈操作使用架构特定的指针大小（x64 为 8 字节，x86 为 4 字节）
+- 线程上下文检索适配 32 位和 64 位环境
+
+### 技术细节
+- 将所有 `X64DBG_SDK_AVAILABLE` 宏替换为 `XDBG_SDK_AVAILABLE`
+- 添加 `duint` 类型定义：x64 为 `uint64_t`，x86 为 `uint32_t`
+- 修改 `RegisterManager`、`StackManager`、`ThreadManager` 以实现架构兼容性
+- 更新 CMake 以根据架构链接正确的 SDK 库：
+  - x64：`x64bridge.lib`、`x64dbg.lib`
+  - x86：`x32bridge.lib`、`x32dbg.lib`
+
 ## [1.1.0] - 2025-11-20
 
 ### 新增

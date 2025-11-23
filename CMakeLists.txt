@@ -70,6 +70,7 @@ set(BUSINESS_SOURCES
     src/business/SymbolResolver.cpp
     src/business/StackManager.cpp
     src/business/ThreadManager.cpp
+    src/business/DumpManager.cpp
 )
 
 set(HANDLER_SOURCES
@@ -84,6 +85,7 @@ set(HANDLER_SOURCES
     src/handlers/EventCallbackHandler.cpp
     src/handlers/ScriptHandler.cpp
     src/handlers/ContextHandler.cpp
+    src/handlers/DumpHandler.cpp
 )
 
 set(UTILS_SOURCES

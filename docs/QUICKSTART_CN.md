@@ -6,8 +6,8 @@
 
 ## 前置要求
 
-- Windows 10/11 (x64)
-- 已安装 x64dbg 调试器
+- Windows 10/11 (x64 或 x86)
+- 已安装 x64dbg 或 x32dbg 调试器
 - Visual Studio 2022 with C++ Desktop Development 工作负载
 - CMake 3.15+
 - vcpkg 包管理器
@@ -17,9 +17,14 @@
 ### 方式一：使用预编译版本（推荐）
 
 1. 从 [GitHub Releases](https://github.com/SetsunaYukiOvO/x64dbg-mcp/releases) 下载最新版本
-2. 解压 `x64dbg_mcp.dp64` 到 x64dbg 插件目录
-3. 复制 `config.json` 到 `plugins/x64dbg-mcp/`
-4. 重启 x64dbg
+2. 选择适合的版本：
+   - `x64dbg_mcp.dp64` 用于 x64dbg（64位）
+   - `x32dbg_mcp.dp32` 用于 x32dbg（32位）
+3. 解压到调试器的插件目录：
+   - x64dbg: `x64dbg\x64\plugins\`
+   - x32dbg: `x64dbg\x32\plugins\`
+4. 复制 `config.json` 到 `plugins/x64dbg-mcp/`（或 `plugins/x32dbg-mcp/`）
+5. 重启调试器
 
 ### 方式二：从源码构建
 
@@ -43,11 +48,15 @@ setx VCPKG_ROOT "C:\vcpkg"
 git clone https://github.com/SetsunaYukiOvO/x64dbg-mcp.git
 cd x64dbg-mcp
 
-# 使用构建脚本（推荐）
+# 构建 x64 版本（默认）
 .\build.bat
+
+# 构建 x86 版本（32位）
+.\build.bat --arch x86
 
 # 或使用特定选项构建
 .\build.bat --clean          # 清理构建
+.\build.bat --arch x86 --clean  # 清理 x86 构建
 .\build.bat --debug          # 调试构建
 .\build.bat --help           # 显示所有选项
 ```
@@ -55,20 +64,32 @@ cd x64dbg-mcp
 构建脚本将：
 - 自动检测 vcpkg 安装
 - 下载并编译依赖项（nlohmann_json）
-- 使用 Visual Studio 构建插件
-- 可选择自动安装到 x64dbg 插件目录
+- 使用 Visual Studio 为所选架构构建插件
+- 可选择自动安装到调试器插件目录
+
+**输出文件：**
+- x64: `build\bin\Release\x64dbg_mcp.dp64`
+- x86: `build\bin\Release\x32dbg_mcp.dp32`
 
 #### 3. 手动构建（高级）
 
 ```powershell
-# 使用 vcpkg 工具链配置
+# x64 配置
 cmake -B build -G "Visual Studio 17 2022" -A x64 ^
-    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+    -DXDBG_ARCH=x64
+
+# 或 x86 配置
+cmake -B build -G "Visual Studio 17 2022" -A Win32 ^
+    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+    -DXDBG_ARCH=x86
 
 # 编译
 cmake --build build --config Release
 
-# 输出：build\bin\Release\x64dbg_mcp.dp64
+# 输出：
+# - x64: build\bin\Release\x64dbg_mcp.dp64
+# - x86: build\bin\Release\x32dbg_mcp.dp32
 ```
 
 ## 1. 安装插件
@@ -76,17 +97,24 @@ cmake --build build --config Release
 如果你没有使用构建脚本的自动安装：
 
 ```powershell
-# 复制插件
+# x64dbg
 copy build\bin\Release\x64dbg_mcp.dp64 C:\x64dbg\x64\plugins\
 
-# 复制配置文件
+# x32dbg
+copy build\bin\Release\x32dbg_mcp.dp32 C:\x64dbg\x32\plugins\
+
+# 复制配置文件（根据架构调整路径）
 mkdir C:\x64dbg\x64\plugins\x64dbg-mcp
 copy config.json C:\x64dbg\x64\plugins\x64dbg-mcp\
+
+# 或 x32
+mkdir C:\x64dbg\x32\plugins\x32dbg-mcp
+copy config.json C:\x64dbg\x32\plugins\x32dbg-mcp\
 ```
 
 ## 2. 启动服务器
 
-1. 启动 x64dbg
+1. 启动 x64dbg 或 x32dbg
 2. 加载目标程序进行调试
 3. 菜单：**插件 → MCP Server → Start MCP HTTP Server**
 4. 服务器在端口 3000 上启动（可在 config.json 中配置）

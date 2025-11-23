@@ -6,8 +6,8 @@ Get up and running with x64dbg MCP Server in minutes.
 
 ## Prerequisites
 
-- Windows 10/11 (x64)
-- x64dbg debugger installed
+- Windows 10/11 (x64 or x86)
+- x64dbg or x32dbg debugger installed
 - Visual Studio 2022 with C++ Desktop Development workload
 - CMake 3.15+
 - vcpkg package manager
@@ -17,9 +17,14 @@ Get up and running with x64dbg MCP Server in minutes.
 ### Option 1: Pre-built Release (Recommended)
 
 1. Download the latest release from [GitHub Releases](https://github.com/SetsunaYukiOvO/x64dbg-mcp/releases)
-2. Extract `x64dbg_mcp.dp64` to your x64dbg plugins directory
-3. Copy `config.json` to `plugins/x64dbg-mcp/`
-4. Restart x64dbg
+2. Choose the appropriate version:
+   - `x64dbg_mcp.dp64` for x64dbg (64-bit)
+   - `x32dbg_mcp.dp32` for x32dbg (32-bit)
+3. Extract to your debugger's plugins directory:
+   - x64dbg: `x64dbg\x64\plugins\`
+   - x32dbg: `x64dbg\x32\plugins\`
+4. Copy `config.json` to `plugins/x64dbg-mcp/` (or `plugins/x32dbg-mcp/`)
+5. Restart the debugger
 
 ### Option 2: Build from Source
 
@@ -43,11 +48,15 @@ setx VCPKG_ROOT "C:\vcpkg"
 git clone https://github.com/SetsunaYukiOvO/x64dbg-mcp.git
 cd x64dbg-mcp
 
-# Build using the build script (recommended)
+# Build for x64 (default)
 .\build.bat
+
+# Build for x86 (32-bit)
+.\build.bat --arch x86
 
 # Or build with specific options
 .\build.bat --clean          # Clean build
+.\build.bat --arch x86 --clean  # Clean x86 build
 .\build.bat --debug          # Debug build
 .\build.bat --help           # Show all options
 ```
@@ -55,20 +64,32 @@ cd x64dbg-mcp
 The build script will:
 - Automatically detect vcpkg installation
 - Download and compile dependencies (nlohmann_json)
-- Build the plugin using Visual Studio
-- Optionally install to x64dbg plugins directory
+- Build the plugin for the selected architecture using Visual Studio
+- Optionally install to the debugger's plugins directory
+
+**Output files:**
+- x64: `build\bin\Release\x64dbg_mcp.dp64`
+- x86: `build\bin\Release\x32dbg_mcp.dp32`
 
 #### 3. Manual Build (Advanced)
 
 ```powershell
-# Configure with vcpkg toolchain
+# Configure for x64
 cmake -B build -G "Visual Studio 17 2022" -A x64 ^
-    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+    -DXDBG_ARCH=x64
+
+# Or configure for x86
+cmake -B build -G "Visual Studio 17 2022" -A Win32 ^
+    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+    -DXDBG_ARCH=x86
 
 # Compile
 cmake --build build --config Release
 
-# Output: build\bin\Release\x64dbg_mcp.dp64
+# Output: 
+# - x64: build\bin\Release\x64dbg_mcp.dp64
+# - x86: build\bin\Release\x32dbg_mcp.dp32
 ```
 
 ## 1. Install Plugin
@@ -76,17 +97,24 @@ cmake --build build --config Release
 If you didn't use the automatic installation in the build script:
 
 ```powershell
-# Copy plugin
+# For x64dbg
 copy build\bin\Release\x64dbg_mcp.dp64 C:\x64dbg\x64\plugins\
 
-# Copy config
+# For x32dbg
+copy build\bin\Release\x32dbg_mcp.dp32 C:\x64dbg\x32\plugins\
+
+# Copy config (adjust path based on architecture)
 mkdir C:\x64dbg\x64\plugins\x64dbg-mcp
 copy config.json C:\x64dbg\x64\plugins\x64dbg-mcp\
+
+# Or for x32
+mkdir C:\x64dbg\x32\plugins\x32dbg-mcp
+copy config.json C:\x64dbg\x32\plugins\x32dbg-mcp\
 ```
 
 ## 2. Start Server
 
-1. Launch x64dbg
+1. Launch x64dbg or x32dbg
 2. Load a target program for debugging
 3. Menu: **Plugins → MCP Server → Start MCP HTTP Server**
 4. Server starts on port 3000 (configurable in config.json)

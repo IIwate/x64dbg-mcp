@@ -14,6 +14,7 @@
 #include "handlers/EventCallbackHandler.h"
 #include "handlers/ScriptHandler.h"
 #include "handlers/ContextHandler.h"
+#include "handlers/DumpHandler.h"
 #include "communication/MCPHttpServer.h"
 #include <windows.h>
 #include <filesystem>
@@ -181,6 +182,7 @@ static void RegisterAllMethods() {
     MCP::StackHandler::RegisterMethods();
     MCP::ThreadHandler::RegisterMethods();
     MCP::ModuleHandler::RegisterMethods();
+    MCP::DumpHandler::RegisterMethods();
     
     // Register script execution methods
     auto& dispatcher = MCP::MethodDispatcher::Instance();

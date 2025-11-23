@@ -2,14 +2,16 @@
 
 [English](../README.md) | 中文
 
-一个为 x64dbg 实现的模型上下文协议（MCP）服务器插件，通过 JSON-RPC 2.0 接口实现远程调试。该插件允许外部应用程序和 AI 代理以编程方式与 x64dbg 调试器交互。
+一个为 x64dbg 和 x32dbg 实现的模型上下文协议（MCP）服务器插件，通过 JSON-RPC 2.0 接口实现远程调试。该插件允许外部应用程序和 AI 代理以编程方式与调试器交互。
+
+**现已支持 x64 和 x86 双架构!**
 
 ## 功能特性
 
 - **JSON-RPC 2.0 协议**：标准的、与语言无关的接口
 - **HTTP + SSE 通信**：基于 Web 的现代化集成方式，使用服务器发送事件
 - **MCP 协议支持**：兼容模型上下文协议，支持 AI 代理集成
-- **全面的调试 API（55+ 方法）**：
+- **全面的调试 API（63+ 方法）**：
   - 执行控制（运行、暂停、单步、运行到指定地址）
   - 内存读取/写入/搜索/分配
   - 寄存器访问（50+ 寄存器，包括 GPR、SSE、AVX）
@@ -17,13 +19,30 @@
   - 反汇编和符号解析
   - 线程管理（列表、切换、挂起、恢复）
   - 调用栈跟踪和分析
+  - **Dump与脱壳**（模块dump、内存dump、自动脱壳、OEP检测、IAT重建）
   - **脚本执行**（执行 x64dbg 命令、批量操作）
   - **上下文快照**（捕获和比较调试状态）
   - 通过 SSE 实现事件通知
 - **安全性**：基于权限的访问控制
 - **可扩展**：支持自定义方法的插件架构
 
-## v1.1.0 新功能
+## v1.1.0 新功能（开发中）
+
+- 🏗️ **双架构支持**：现已支持 x64dbg 和 x32dbg
+  - 可构建 x64（64位）或 x86（32位）架构版本
+  - 架构感知的寄存器处理（RAX/EAX、RSP/ESP 等）
+  - 独立的插件文件：`x64dbg_mcp.dp64` 和 `x32dbg_mcp.dp32`
+  - 统一的 SDK 和构建系统支持双架构
+
+- 🎯 **Dump与脱壳功能**：全面的内存转储和自动脱壳能力
+  - `dump.module`: 转储可执行模块并重建PE结构
+  - `dump.memory_region`: 转储任意内存区域
+  - `dump.auto_unpack`: 自动脱壳并检测OEP
+  - `dump.analyze_module`: 检测加壳器（UPX、ASPack等）
+  - `dump.detect_oep`: 原始入口点检测
+  - `dump.fix_imports`: IAT重建（Scylla风格）
+  - 支持多层壳处理
+  - AI驱动的可自定义脱壳策略
 
 - ✨ **脚本执行 API**：以编程方式执行 x64dbg 命令
   - `script.execute`：运行单个 x64dbg 命令
@@ -36,6 +55,8 @@
   - `context.compare_snapshots`：比较两个快照以找出差异
 
 - 📊 **增强的自动化**：结合脚本和快照实现强大的工作流
+
+详细功能说明和示例请参见 [UPDATE_CN.md](../UPDATE_CN.md)。
 
 ## 从源码构建
 
@@ -56,24 +77,33 @@
 git clone https://github.com/SetsunaYukiOvO/x64dbg-mcp.git
 cd x64dbg-mcp
 
-# 运行构建脚本
+# 构建 x64 版本（64位 x64dbg）- 默认
 .\build.bat
+
+# 构建 x86 版本（32位 x32dbg）
+.\build.bat --arch x86
 
 # 脚本将自动：
 # 1. 检测或安装 vcpkg
 # 2. 下载依赖项 (nlohmann_json)
-# 3. 使用正确的设置配置 CMake
+# 3. 为所选架构配置 CMake
 # 4. 使用 Visual Studio 构建
-# 5. 可选：安装到 x64dbg 插件目录
+# 5. 可选：安装到 x64dbg/x32dbg 插件目录
 ```
 
 构建脚本选项：
 ```powershell
-.\build.bat           # Release 构建（默认）
-.\build.bat --debug   # Debug 构建（含调试符号）
-.\build.bat --clean   # 清理重新构建
-.\build.bat --help    # 显示所有选项
+.\build.bat               # x64 Release 构建（默认）
+.\build.bat --arch x86    # 构建 x86（32位）版本
+.\build.bat --arch x64    # 构建 x64（64位）版本
+.\build.bat --debug       # Debug 构建（含调试符号）
+.\build.bat --clean       # 清理重新构建
+.\build.bat --help        # 显示所有选项
 ```
+
+**输出文件：**
+- x64 构建：`build\bin\Release\x64dbg_mcp.dp64`
+- x86 构建：`build\bin\Release\x32dbg_mcp.dp32`
 
 ### 手动构建步骤
 
@@ -94,8 +124,15 @@ cd x64dbg-mcp
 
 3. **配置 CMake**：
 ```powershell
+# x64 构建
 cmake -B build -G "Visual Studio 17 2022" -A x64 ^
-    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+    -DXDBG_ARCH=x64
+
+# x86 构建
+cmake -B build -G "Visual Studio 17 2022" -A Win32 ^
+    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+    -DXDBG_ARCH=x86
 ```
 
 4. **构建**：

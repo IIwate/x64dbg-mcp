@@ -2,14 +2,16 @@
 
 English | [中文](docs/README_CN.md)
 
-A Model Context Protocol (MCP) server implementation for x64dbg, enabling remote debugging through a JSON-RPC 2.0 interface. This plugin allows external applications and AI agents to interact with the x64dbg debugger programmatically.
+A Model Context Protocol (MCP) server implementation for x64dbg and x32dbg, enabling remote debugging through a JSON-RPC 2.0 interface. This plugin allows external applications and AI agents to interact with the debugger programmatically.
+
+**Now supports both x64 and x86 architectures!**
 
 ## Features
 
 - **JSON-RPC 2.0 Protocol**: Standard, language-agnostic interface
 - **HTTP + SSE Communication**: Modern web-based integration via Server-Sent Events
 - **MCP Protocol Support**: Compatible with Model Context Protocol for AI agent integration
-- **Comprehensive Debugging API (55+ methods)**: 
+- **Comprehensive Debugging API (63+ methods)**: 
   - Execution control (run, pause, step, run_to)
   - Memory read/write/search/allocate
   - Register access (50+ registers including GPR, SSE, AVX)
@@ -17,13 +19,30 @@ A Model Context Protocol (MCP) server implementation for x64dbg, enabling remote
   - Disassembly and symbol resolution
   - Thread management (list, switch, suspend, resume)
   - Stack trace and analysis
+  - **Dump & Unpacking** (module dump, memory dump, auto-unpacking, OEP detection, IAT reconstruction)
   - **Script execution** (execute x64dbg commands, batch operations)
   - **Context snapshots** (capture and compare debugging state)
   - Event notifications via SSE
 - **Security**: Permission-based access control
 - **Extensible**: Plugin architecture for custom methods
 
-## What's New in v1.1.0
+## What's New in v1.1.0 (Development)
+
+- 🏗️ **Dual Architecture Support**: Now supports both x64dbg and x32dbg
+  - Build for x64 (64-bit) or x86 (32-bit) architecture
+  - Architecture-aware register handling (RAX/EAX, RSP/ESP, etc.)
+  - Separate plugin files: `x64dbg_mcp.dp64` and `x32dbg_mcp.dp32`
+  - Unified SDK and build system for both architectures
+
+- 🎯 **Dump & Unpacking Features**: Comprehensive memory dumping and automatic unpacking capabilities
+  - `dump.module`: Dump executable modules with PE reconstruction
+  - `dump.memory_region`: Dump arbitrary memory regions
+  - `dump.auto_unpack`: Automatic unpacking with OEP detection
+  - `dump.analyze_module`: Detect packers (UPX, ASPack, etc.)
+  - `dump.detect_oep`: Original Entry Point detection
+  - `dump.fix_imports`: IAT reconstruction (Scylla-style)
+  - Support for multi-layer unpacking
+  - AI-driven customizable unpacking strategies
 
 - ✨ **Script Execution API**: Execute x64dbg commands programmatically
   - `script.execute`: Run single x64dbg command
@@ -36,6 +55,8 @@ A Model Context Protocol (MCP) server implementation for x64dbg, enabling remote
   - `context.compare_snapshots`: Compare two snapshots to find differences
 
 - 📊 **Enhanced Automation**: Combine scripting with snapshots for powerful workflows
+
+See [UPDATE.md](UPDATE.md) for detailed feature descriptions and examples.
 
 ## Building from Source
 
@@ -56,24 +77,33 @@ The easiest way to build is using the provided build script:
 git clone https://github.com/SetsunaYukiOvO/x64dbg-mcp.git
 cd x64dbg-mcp
 
-# Run the build script
+# Build for x64 (64-bit x64dbg) - Default
 .\build.bat
+
+# Build for x86 (32-bit x32dbg)
+.\build.bat --arch x86
 
 # The script will:
 # 1. Automatically detect or install vcpkg
 # 2. Download dependencies (nlohmann_json)
-# 3. Configure CMake with proper settings
+# 3. Configure CMake with proper settings for selected architecture
 # 4. Build using Visual Studio
-# 5. Optionally install to x64dbg plugins directory
+# 5. Optionally install to x64dbg/x32dbg plugins directory
 ```
 
 Build script options:
 ```powershell
-.\build.bat           # Release build (default)
-.\build.bat --debug   # Debug build with symbols
-.\build.bat --clean   # Clean rebuild
-.\build.bat --help    # Show all options
+.\build.bat               # Release build for x64 (default)
+.\build.bat --arch x86    # Build for x86 (32-bit)
+.\build.bat --arch x64    # Build for x64 (64-bit)
+.\build.bat --debug       # Debug build with symbols
+.\build.bat --clean       # Clean rebuild
+.\build.bat --help        # Show all options
 ```
+
+**Output files:**
+- x64 build: `build\bin\Release\x64dbg_mcp.dp64`
+- x86 build: `build\bin\Release\x32dbg_mcp.dp32`
 
 ### Manual Build Steps
 
@@ -94,8 +124,15 @@ cd x64dbg-mcp
 
 3. **Configure with CMake**:
 ```powershell
+# For x64 build
 cmake -B build -G "Visual Studio 17 2022" -A x64 ^
-    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+    -DXDBG_ARCH=x64
+
+# For x86 build
+cmake -B build -G "Visual Studio 17 2022" -A Win32 ^
+    -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+    -DXDBG_ARCH=x86
 ```
 
 4. **Build**:
