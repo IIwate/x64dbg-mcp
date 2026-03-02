@@ -3,7 +3,9 @@
  * @brief MCP HTTP Server implementation
  */
 
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include "MCPHttpServer.h"
 #include "../core/Logger.h"
 #include "../core/MethodDispatcher.h"
@@ -14,11 +16,186 @@
 #include <ws2tcpip.h>
 #include <sstream>
 #include <algorithm>
+#include <array>
+#include <cctype>
+#include <limits>
 #include <nlohmann/json.hpp>
 
 #pragma comment(lib, "ws2_32.lib")
 
 namespace MCP {
+
+namespace {
+
+constexpr size_t kReceiveChunkSize = 4096;
+constexpr size_t kMaxHttpRequestSize = 1024 * 1024;
+
+std::string ToLowerCopy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+void TrimInPlace(std::string& value) {
+    const auto isSpace = [](unsigned char ch) { return std::isspace(ch) != 0; };
+    value.erase(value.begin(),
+                std::find_if(value.begin(), value.end(),
+                             [&](unsigned char ch) { return !isSpace(ch); }));
+    value.erase(std::find_if(value.rbegin(), value.rend(),
+                             [&](unsigned char ch) { return !isSpace(ch); }).base(),
+                value.end());
+}
+
+bool ParseContentLength(const std::string& headers, size_t& outLength) {
+    std::istringstream stream(headers);
+    std::string line;
+
+    while (std::getline(stream, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
+        const size_t colon = line.find(':');
+        if (colon == std::string::npos) {
+            continue;
+        }
+
+        std::string name = line.substr(0, colon);
+        TrimInPlace(name);
+        if (ToLowerCopy(name) != "content-length") {
+            continue;
+        }
+
+        std::string value = line.substr(colon + 1);
+        TrimInPlace(value);
+        if (value.empty()) {
+            return false;
+        }
+
+        try {
+            const size_t parsed = static_cast<size_t>(std::stoull(value));
+            outLength = parsed;
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    return false;
+}
+
+bool ReceiveHttpRequest(SOCKET socket, std::string& request, bool& payloadTooLarge) {
+    request.clear();
+    payloadTooLarge = false;
+
+    std::array<char, kReceiveChunkSize> buffer{};
+    size_t headerEnd = std::string::npos;
+    size_t contentLength = 0;
+    bool lengthKnown = false;
+
+    while (true) {
+        int bytesReceived = recv(socket, buffer.data(), static_cast<int>(buffer.size()), 0);
+        if (bytesReceived <= 0) {
+            break;
+        }
+
+        request.append(buffer.data(), static_cast<size_t>(bytesReceived));
+        if (request.size() > kMaxHttpRequestSize) {
+            payloadTooLarge = true;
+            return false;
+        }
+
+        if (headerEnd == std::string::npos) {
+            headerEnd = request.find("\r\n\r\n");
+            if (headerEnd != std::string::npos) {
+                const std::string headerPart = request.substr(0, headerEnd + 4);
+                if (!ParseContentLength(headerPart, contentLength)) {
+                    contentLength = 0;
+                }
+                lengthKnown = true;
+            }
+        }
+
+        if (headerEnd != std::string::npos && lengthKnown) {
+            const size_t totalExpected = headerEnd + 4 + contentLength;
+            if (request.size() >= totalExpected) {
+                return true;
+            }
+        }
+    }
+
+    if (headerEnd != std::string::npos && lengthKnown) {
+        const size_t totalExpected = headerEnd + 4 + contentLength;
+        return request.size() >= totalExpected;
+    }
+
+    return false;
+}
+
+bool ResolveHostAddress(const std::string& host, in_addr& address) {
+    if (host == "0.0.0.0" || host == "*") {
+        address.s_addr = htonl(INADDR_ANY);
+        return true;
+    }
+
+    if (inet_pton(AF_INET, host.c_str(), &address) == 1) {
+        return true;
+    }
+
+    addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    addrinfo* result = nullptr;
+    const int resolveResult = getaddrinfo(host.c_str(), nullptr, &hints, &result);
+    if (resolveResult != 0 || result == nullptr) {
+        return false;
+    }
+
+    const auto* resolved = reinterpret_cast<sockaddr_in*>(result->ai_addr);
+    address = resolved->sin_addr;
+    freeaddrinfo(result);
+    return true;
+}
+
+bool SendAll(SOCKET socket, const std::string& data) {
+    size_t totalSent = 0;
+    while (totalSent < data.size()) {
+        const size_t remaining = data.size() - totalSent;
+        const int chunkSize = remaining > static_cast<size_t>(std::numeric_limits<int>::max())
+            ? std::numeric_limits<int>::max()
+            : static_cast<int>(remaining);
+        const int sent = send(
+            socket,
+            data.data() + totalSent,
+            chunkSize,
+            0
+        );
+
+        if (sent == SOCKET_ERROR || sent == 0) {
+            return false;
+        }
+
+        totalSent += static_cast<size_t>(sent);
+    }
+
+    return true;
+}
+
+const char* GetHttpStatusText(int statusCode) {
+    switch (statusCode) {
+        case 200: return "OK";
+        case 204: return "No Content";
+        case 400: return "Bad Request";
+        case 404: return "Not Found";
+        case 413: return "Payload Too Large";
+        case 500: return "Internal Server Error";
+        default:  return "OK";
+    }
+}
+
+} // namespace
 
 MCPHttpServer::MCPHttpServer() 
     : m_listenSocket(INVALID_SOCKET)
@@ -37,17 +214,22 @@ bool MCPHttpServer::Start(const std::string& host, int port) {
         return false;
     }
 
+    if (port <= 0 || port > 65535) {
+        Logger::Error("Invalid port: {}", port);
+        return false;
+    }
+
     m_host = host;
     m_port = port;
 
-    // 初始化 WinSock
+    // 鍒濆鍖?WinSock
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         Logger::Error("WSAStartup failed");
         return false;
     }
 
-    // 创建监听 socket
+    // 鍒涘缓鐩戝惉 socket
     m_listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (m_listenSocket == INVALID_SOCKET) {
         Logger::Error("Failed to create socket");
@@ -55,22 +237,32 @@ bool MCPHttpServer::Start(const std::string& host, int port) {
         return false;
     }
 
-    // 绑定地址
+    int reuseAddr = 1;
+    setsockopt(m_listenSocket, SOL_SOCKET, SO_REUSEADDR,
+               reinterpret_cast<const char*>(&reuseAddr), sizeof(reuseAddr));
+
+    // 缁戝畾鍦板潃
     sockaddr_in serverAddr{};
     serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(port);
-    inet_pton(AF_INET, host.c_str(), &serverAddr.sin_addr);
+    serverAddr.sin_port = htons(static_cast<u_short>(port));
+    if (!ResolveHostAddress(host, serverAddr.sin_addr)) {
+        Logger::Error("Invalid listen host: {}", host);
+        closesocket(m_listenSocket);
+        m_listenSocket = INVALID_SOCKET;
+        WSACleanup();
+        return false;
+    }
 
     if (bind(m_listenSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-        Logger::Error("Failed to bind socket");
+        Logger::Error("Failed to bind socket: {}", WSAGetLastError());
         closesocket(m_listenSocket);
         WSACleanup();
         return false;
     }
 
-    // 开始监听
+    // 寮€濮嬬洃鍚?
     if (listen(m_listenSocket, SOMAXCONN) == SOCKET_ERROR) {
-        Logger::Error("Failed to listen");
+        Logger::Error("Failed to listen: {}", WSAGetLastError());
         closesocket(m_listenSocket);
         WSACleanup();
         return false;
@@ -111,7 +303,7 @@ void MCPHttpServer::ServerLoop() {
             break;
         }
 
-        // 为每个客户端创建新线程（简化版，实际应该用线程池）
+        // 涓烘瘡涓鎴风鍒涘缓鏂扮嚎绋嬶紙绠€鍖栫増锛屽疄闄呭簲璇ョ敤绾跨▼姹狅級
         std::thread([this, clientSocket]() {
             HandleClient(clientSocket);
         }).detach();
@@ -119,24 +311,25 @@ void MCPHttpServer::ServerLoop() {
 }
 
 void MCPHttpServer::HandleClient(SOCKET clientSocket) {
-    char buffer[4096];
-    int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-    
-    if (bytesReceived > 0) {
-        buffer[bytesReceived] = '\0';
-        std::string request(buffer);
-        
-        // 检查是否是 SSE 请求
-        bool isSSE = (request.find("GET /sse") != std::string::npos);
-        
-        HandleHttpRequest(clientSocket, request);
-        
-        // 只有非 SSE 请求才关闭 socket（SSE 需要保持连接）
-        if (!isSSE) {
-            closesocket(clientSocket);
+    std::string request;
+    bool payloadTooLarge = false;
+    if (!ReceiveHttpRequest(clientSocket, request, payloadTooLarge)) {
+        if (payloadTooLarge) {
+            SendHttpResponse(clientSocket, 413, "{\"error\":\"Payload Too Large\"}");
         }
-        // SSE 连接会在 HandleSSE 函数中由客户端断开或服务器停止时关闭
-    } else {
+        closesocket(clientSocket);
+        return;
+    }
+
+    std::string method;
+    std::string path;
+    std::string body;
+    const bool isSSE = ParseHttpRequest(request, method, path, body) &&
+        method == "GET" && path == "/sse";
+
+    HandleHttpRequest(clientSocket, request);
+
+    if (!isSSE) {
         closesocket(clientSocket);
     }
 }
@@ -155,11 +348,11 @@ void MCPHttpServer::HandleHttpRequest(SOCKET clientSocket, const std::string& re
         HandleSSE(clientSocket);
     }
     else if (method == "POST" && (path == "/message" || path == "/" || path == "/messages")) {
-        // 支持多种 POST 路径：/, /message, /messages
+        // 鏀寔澶氱 POST 璺緞锛?, /message, /messages
         HandlePostMessage(clientSocket, body);
     }
     else if (method == "GET" && path == "/") {
-        // 健康检查
+        // 鍋ュ悍妫€鏌?
         SendHttpResponse(clientSocket, 200, "{\"status\":\"ok\",\"service\":\"x64dbg-mcp\"}");
     }
     else {
@@ -168,7 +361,7 @@ void MCPHttpServer::HandleHttpRequest(SOCKET clientSocket, const std::string& re
 }
 
 void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
-    // 发送 SSE 响应头
+    // 鍙戦€?SSE 鍝嶅簲澶?
     std::string headers = 
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: text/event-stream\r\n"
@@ -177,15 +370,19 @@ void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
         "Access-Control-Allow-Origin: *\r\n"
         "\r\n";
     
-    send(clientSocket, headers.c_str(), headers.length(), 0);
+    if (!SendAll(clientSocket, headers)) {
+        Logger::Error("Failed to send SSE headers");
+        closesocket(clientSocket);
+        return;
+    }
 
     Logger::Info("SSE connection established, waiting for client messages...");
 
-    // 设置 socket 为非阻塞模式
+    // 璁剧疆 socket 涓洪潪闃诲妯″紡
     u_long mode = 1;
     ioctlsocket(clientSocket, FIONBIO, &mode);
 
-    // 读取客户端发送的消息（有些 MCP 客户端通过 SSE 连接发送请求）
+    // 璇诲彇瀹㈡埛绔彂閫佺殑娑堟伅锛堟湁浜?MCP 瀹㈡埛绔€氳繃 SSE 杩炴帴鍙戦€佽姹傦級
     char buffer[4096];
     std::string accumulated;
     int heartbeatCounter = 0;
@@ -197,18 +394,18 @@ void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
             buffer[bytesReceived] = '\0';
             accumulated += buffer;
             
-            // 查找完整的 JSON 消息（按行分隔）
+            // 鏌ユ壘瀹屾暣鐨?JSON 娑堟伅锛堟寜琛屽垎闅旓級
             size_t pos;
             while ((pos = accumulated.find('\n')) != std::string::npos) {
                 std::string line = accumulated.substr(0, pos);
                 accumulated = accumulated.substr(pos + 1);
                 
-                // 跳过空行
+                // 璺宠繃绌鸿
                 if (line.empty() || line == "\r") continue;
                 
                 Logger::Debug("SSE received: " + line);
                 
-                // 解析并处理 JSON-RPC 请求
+                // 瑙ｆ瀽骞跺鐞?JSON-RPC 璇锋眰
                 std::string method, requestId;
                 if (ParseJsonRpcRequest(line, method, requestId)) {
                     std::string response = HandleMCPMethod(method, requestId, line);
@@ -216,11 +413,11 @@ void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
                 }
             }
         } else if (bytesReceived == 0) {
-            // 客户端正常关闭
+            // 瀹㈡埛绔甯稿叧闂?
             Logger::Debug("SSE client disconnected");
             break;
         } else {
-            // WSAEWOULDBLOCK 表示没有数据可读，这是正常的
+            // WSAEWOULDBLOCK 琛ㄧず娌℃湁鏁版嵁鍙锛岃繖鏄甯哥殑
             int error = WSAGetLastError();
             if (error != WSAEWOULDBLOCK) {
                 Logger::Error("SSE recv error: " + std::to_string(error));
@@ -228,17 +425,17 @@ void MCPHttpServer::HandleSSE(SOCKET clientSocket) {
             }
         }
         
-        // 每 15 秒发送一次心跳（保持连接活跃）
+        // 姣?15 绉掑彂閫佷竴娆″績璺筹紙淇濇寔杩炴帴娲昏穬锛?
         if (++heartbeatCounter >= 150) {  // 150 * 100ms = 15s
             SendSSEEvent(clientSocket, "ping", "{}");
             heartbeatCounter = 0;
         }
         
-        // 短暂休眠避免 CPU 占用过高
+        // 鐭殏浼戠湢閬垮厤 CPU 鍗犵敤杩囬珮
         Sleep(100);
     }
     
-    // SSE 连接结束，关闭 socket
+    // SSE 杩炴帴缁撴潫锛屽叧闂?socket
     Logger::Info("Closing SSE connection");
     closesocket(clientSocket);
 }
@@ -257,7 +454,7 @@ void MCPHttpServer::HandlePostMessage(SOCKET clientSocket, const std::string& bo
 
     std::string response = HandleMCPMethod(method, requestId, body);
     
-    // 如果是通知（没有响应），返回 204 No Content
+    // 濡傛灉鏄€氱煡锛堟病鏈夊搷搴旓級锛岃繑鍥?204 No Content
     if (response.empty()) {
         Logger::Debug("No response needed (notification)");
         SendHttpResponse(clientSocket, 204, "");
@@ -267,55 +464,39 @@ void MCPHttpServer::HandlePostMessage(SOCKET clientSocket, const std::string& bo
     }
 }
 
-bool MCPHttpServer::ParseJsonRpcRequest(const std::string& json, 
+bool MCPHttpServer::ParseJsonRpcRequest(const std::string& rawJson, 
                                         std::string& method, 
                                         std::string& requestId) {
-    // 简单解析（实际应该用 JSON 库）
-    size_t methodPos = json.find("\"method\":");
-    if (methodPos != std::string::npos) {
-        size_t start = json.find("\"", methodPos + 9) + 1;
-        size_t end = json.find("\"", start);
-        if (end != std::string::npos) {
-            method = json.substr(start, end - start);
-        }
-    }
-    
-    size_t idPos = json.find("\"id\":");
-    if (idPos != std::string::npos) {
-        size_t start = idPos + 5;
-        // 跳过空格
-        while (start < json.length() && (json[start] == ' ' || json[start] == '\t')) {
-            start++;
-        }
-        
-        // 检查是否是字符串 ID（以引号开头）
-        bool isStringId = (json[start] == '"');
-        if (isStringId) {
-            start++; // 跳过开始的引号
-            size_t end = json.find("\"", start);
-            if (end != std::string::npos) {
-                requestId = "\"" + json.substr(start, end - start) + "\""; // 保留引号
-            }
-        } else {
-            // 数字 ID 或 null
-            size_t end = json.find_first_of(",}\r\n", start);
-            if (end != std::string::npos) {
-                std::string idValue = json.substr(start, end - start);
-                // 去除尾部空格
-                while (!idValue.empty() && (idValue.back() == ' ' || idValue.back() == '\t')) {
-                    idValue.pop_back();
-                }
-                requestId = idValue.empty() ? "null" : idValue;
-            }
-        }
-    }
-    
-    // 如果没有找到 ID，使用 null
-    if (requestId.empty()) {
-        requestId = "null";
-    }
+    method.clear();
+    requestId = "null";
 
-    return !method.empty();
+    try {
+        json request = json::parse(rawJson);
+        if (!request.is_object()) {
+            return false;
+        }
+
+        auto methodIt = request.find("method");
+        if (methodIt == request.end() || !methodIt->is_string()) {
+            return false;
+        }
+        method = methodIt->get<std::string>();
+
+        auto idIt = request.find("id");
+        if (idIt != request.end()) {
+            if (idIt->is_null()) {
+                requestId = "null";
+            } else if (idIt->is_string() || idIt->is_number()) {
+                requestId = idIt->dump();
+            } else {
+                Logger::Warning("Unsupported JSON-RPC id type, fallback to null");
+            }
+        }
+
+        return true;
+    } catch (const json::exception&) {
+        return false;
+    }
 }
 
 std::string MCPHttpServer::HandleMCPMethod(const std::string& method, const std::string& requestId, const std::string& body) {
@@ -327,9 +508,9 @@ std::string MCPHttpServer::HandleMCPMethod(const std::string& method, const std:
                "\"serverInfo\":{\"name\":\"x64dbg-mcp\",\"version\":\"1.0.1\"}}}";
     }
     else if (method == "notifications/initialized") {
-        // 这是客户端发的通知，不需要响应
+        // 杩欐槸瀹㈡埛绔彂鐨勯€氱煡锛屼笉闇€瑕佸搷搴?
         Logger::Debug("Received initialized notification from client");
-        return ""; // 不返回响应
+        return ""; // 涓嶈繑鍥炲搷搴?
     }
     else if (method == "tools/list") {
         auto& registry = MCPToolRegistry::Instance();
@@ -349,7 +530,7 @@ std::string MCPHttpServer::HandleMCPMethod(const std::string& method, const std:
         Logger::Info("Handling tools/call request");
         
         try {
-            // 解析请求 body
+            // 瑙ｆ瀽璇锋眰 body
             json requestJson = json::parse(body);
             
             if (!requestJson.contains("params")) {
@@ -381,7 +562,7 @@ std::string MCPHttpServer::HandleMCPMethod(const std::string& method, const std:
             
             Logger::Info("Calling tool: {} with args: {}", toolName, arguments.dump());
             
-            // 调用工具
+            // 璋冪敤宸ュ叿
             std::string result = CallMCPTool(toolName, arguments);
             
             return json({
@@ -564,7 +745,7 @@ bool MCPHttpServer::ParseHttpRequest(const std::string& request,
                                      std::string& method, 
                                      std::string& path, 
                                      std::string& body) {
-    // 解析请求行
+    // 瑙ｆ瀽璇锋眰琛?
     size_t firstSpace = request.find(' ');
     if (firstSpace == std::string::npos) return false;
     
@@ -575,7 +756,7 @@ bool MCPHttpServer::ParseHttpRequest(const std::string& request,
     
     path = request.substr(firstSpace + 1, secondSpace - firstSpace - 1);
     
-    // 提取 body（在 \r\n\r\n 之后）
+    // 鎻愬彇 body锛堝湪 \r\n\r\n 涔嬪悗锛?
     size_t bodyStart = request.find("\r\n\r\n");
     if (bodyStart != std::string::npos) {
         body = request.substr(bodyStart + 4);
@@ -587,20 +768,22 @@ bool MCPHttpServer::ParseHttpRequest(const std::string& request,
 void MCPHttpServer::SendHttpResponse(SOCKET socket, int statusCode, 
                                      const std::string& body,
                                      const std::string& contentType) {
-    std::string statusText = (statusCode == 200) ? "OK" : 
-                            (statusCode == 404) ? "Not Found" : "Bad Request";
+    const std::string responseBody = (statusCode == 204) ? "" : body;
+    const char* statusText = GetHttpStatusText(statusCode);
     
     std::ostringstream response;
     response << "HTTP/1.1 " << statusCode << " " << statusText << "\r\n"
              << "Content-Type: " << contentType << "\r\n"
-             << "Content-Length: " << body.length() << "\r\n"
+             << "Content-Length: " << responseBody.length() << "\r\n"
              << "Access-Control-Allow-Origin: *\r\n"
              << "Connection: close\r\n"
              << "\r\n"
-             << body;
+             << responseBody;
     
     std::string responseStr = response.str();
-    send(socket, responseStr.c_str(), responseStr.length(), 0);
+    if (!SendAll(socket, responseStr)) {
+        Logger::Error("Failed to send HTTP response");
+    }
 }
 
 void MCPHttpServer::SendSSEEvent(SOCKET socket, const std::string& event, const std::string& data) {
@@ -610,13 +793,15 @@ void MCPHttpServer::SendSSEEvent(SOCKET socket, const std::string& event, const 
         << "\r\n";
     
     std::string sseStr = sse.str();
-    send(socket, sseStr.c_str(), sseStr.length(), 0);
+    if (!SendAll(socket, sseStr)) {
+        Logger::Debug("Failed to send SSE event '{}'", event);
+    }
 }
 
 std::string MCPHttpServer::CallMCPTool(const std::string& toolName, const nlohmann::json& arguments) {
     auto& registry = MCPToolRegistry::Instance();
     
-    // 查找工具定义
+    // 鏌ユ壘宸ュ叿瀹氫箟
     auto toolOpt = registry.FindTool(toolName);
     if (!toolOpt.has_value()) {
         Logger::Error("Tool not found: {}", toolName);
@@ -625,7 +810,7 @@ std::string MCPHttpServer::CallMCPTool(const std::string& toolName, const nlohma
     
     const MCPToolDefinition& tool = toolOpt.value();
     
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     std::string validationError = tool.ValidateArguments(arguments);
     if (!validationError.empty()) {
         Logger::Error("Tool argument validation failed: {}", validationError);
@@ -634,18 +819,18 @@ std::string MCPHttpServer::CallMCPTool(const std::string& toolName, const nlohma
     
     Logger::Info("Executing tool: {} -> method: {}", toolName, tool.jsonrpcMethod);
     
-    // 构建 JSON-RPC 请求发送给 MethodDispatcher
+    // 鏋勫缓 JSON-RPC 璇锋眰鍙戦€佺粰 MethodDispatcher
     try {
         auto& dispatcher = MethodDispatcher::Instance();
         
-        // 构建请求
+        // 鏋勫缓璇锋眰
         JSONRPCRequest request;
         request.jsonrpc = "2.0";
         request.method = tool.jsonrpcMethod;
         request.id = ++m_requestId;
         request.params = tool.TransformToJSONRPC(arguments);
         
-        // 调用分发器
+        // 璋冪敤鍒嗗彂鍣?
         JSONRPCResponse response = dispatcher.Dispatch(request);
         
         if (response.error.has_value()) {
@@ -653,8 +838,8 @@ std::string MCPHttpServer::CallMCPTool(const std::string& toolName, const nlohma
             return "Error: " + response.error->message;
         }
         
-        // 返回格式化的结果
-        return response.result.dump(2);  // 美化输出
+        // 杩斿洖鏍煎紡鍖栫殑缁撴灉
+        return response.result.dump(2);  // 缇庡寲杈撳嚭
         
     } catch (const std::exception& e) {
         Logger::Error("Exception calling tool: {}", e.what());

@@ -1,4 +1,4 @@
-#include "DisassemblyHandler.h"
+﻿#include "DisassemblyHandler.h"
 #include "../business/DisassemblyEngine.h"
 #include "../business/SymbolResolver.h"
 #include "../core/MethodDispatcher.h"
@@ -88,13 +88,13 @@ nlohmann::json DisassemblyHandler::Function(const nlohmann::json& params) {
     auto& engine = DisassemblyEngine::Instance();
     auto& resolver = SymbolResolver::Instance();
     
-    // 获取函数起始地址
+    // 鑾峰彇鍑芥暟璧峰鍦板潃
     auto funcStart = resolver.GetFunctionStart(address);
     if (!funcStart.has_value()) {
         funcStart = address;
     }
     
-    // 反汇编函数
+    // 鍙嶆眹缂栧嚱鏁?
     auto instructions = engine.DisassembleFunction(funcStart.value());
     
     nlohmann::json instrArray = nlohmann::json::array();
@@ -107,7 +107,7 @@ nlohmann::json DisassemblyHandler::Function(const nlohmann::json& params) {
     result["count"] = instructions.size();
     result["instructions"] = instrArray;
     
-    // 如果可以获取函数结束地址
+    // 濡傛灉鍙互鑾峰彇鍑芥暟缁撴潫鍦板潃
     if (!instructions.empty()) {
         auto lastInstr = instructions.back();
         result["end"] = StringUtils::FormatAddress(lastInstr.address + lastInstr.size);
@@ -182,7 +182,7 @@ nlohmann::json SymbolHandler::Resolve(const nlohmann::json& params) {
     result["symbol"] = symbol;
     result["address"] = StringUtils::FormatAddress(address.value());
     
-    // 获取详细信息
+    // 鑾峰彇璇︾粏淇℃伅
     auto info = resolver.GetSymbolInfoFromAddress(address.value());
     if (info.has_value()) {
         result["module"] = info->module;
@@ -279,8 +279,8 @@ nlohmann::json SymbolHandler::Modules(const nlohmann::json& params) {
 }
 
 nlohmann::json SymbolHandler::SetLabel(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Setting label requires write permission");
     }
     
@@ -311,8 +311,8 @@ nlohmann::json SymbolHandler::SetLabel(const nlohmann::json& params) {
 }
 
 nlohmann::json SymbolHandler::SetComment(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Setting comment requires write permission");
     }
     
@@ -372,7 +372,7 @@ nlohmann::json SymbolHandler::SymbolInfoToJson(const SymbolInfo& symbol) {
     json["address"] = StringUtils::FormatAddress(symbol.address);
     json["module"] = symbol.module;
     
-    // 符号类型
+    // 绗﹀彿绫诲瀷
     switch (symbol.type) {
         case SymbolType::Function:
             json["type"] = "function";
@@ -416,3 +416,4 @@ nlohmann::json SymbolHandler::ModuleInfoToJson(const ModuleInfo& module) {
 }
 
 } // namespace MCP
+

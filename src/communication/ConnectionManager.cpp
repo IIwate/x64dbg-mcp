@@ -22,11 +22,13 @@ void ConnectionManager::SetConnectionCallback(ConnectionCallback callback) {
 }
 
 ClientId ConnectionManager::AddClient(SOCKET socket, const std::string& address, uint16_t port) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    
-    ClientId id = m_nextClientId++;
-    auto client = std::make_shared<ClientContext>(id, socket, address, port);
-    m_clients[id] = client;
+    ClientId id = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        id = m_nextClientId++;
+        auto client = std::make_shared<ClientContext>(id, socket, address, port);
+        m_clients[id] = client;
+    }
     
     Logger::Info("Client {} connected from {}:{}", id, address, port);
     

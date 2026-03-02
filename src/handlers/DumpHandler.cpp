@@ -1,4 +1,4 @@
-#include "DumpHandler.h"
+﻿#include "DumpHandler.h"
 #include "../business/DumpManager.h"
 #include "../core/MethodDispatcher.h"
 #include "../core/PermissionChecker.h"
@@ -24,12 +24,12 @@ void DumpHandler::RegisterMethods() {
 }
 
 nlohmann::json DumpHandler::DumpModule(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Dumping module requires write permission");
     }
     
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("module")) {
         throw InvalidParamsException("Missing required parameter: module");
     }
@@ -41,7 +41,7 @@ nlohmann::json DumpHandler::DumpModule(const nlohmann::json& params) {
     std::string module = params["module"].get<std::string>();
     std::string outputPath = params["output_path"].get<std::string>();
     
-    // 解析选项
+    // 瑙ｆ瀽閫夐」
     DumpOptions options;
     if (params.contains("options")) {
         const auto& opts = params["options"];
@@ -56,19 +56,19 @@ nlohmann::json DumpHandler::DumpModule(const nlohmann::json& params) {
     
     auto& manager = DumpManager::Instance();
     
-    // 执行dump
+    // 鎵цdump
     auto result = manager.DumpModule(module, outputPath, options, nullptr);
     
     return DumpResultToJson(result);
 }
 
 nlohmann::json DumpHandler::DumpMemoryRegion(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Dumping memory requires write permission");
     }
     
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("address")) {
         throw InvalidParamsException("Missing required parameter: address");
     }
@@ -94,12 +94,12 @@ nlohmann::json DumpHandler::DumpMemoryRegion(const nlohmann::json& params) {
 }
 
 nlohmann::json DumpHandler::AutoUnpackAndDump(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Auto-unpacking requires write permission");
     }
     
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("module")) {
         throw InvalidParamsException("Missing required parameter: module");
     }
@@ -117,7 +117,7 @@ nlohmann::json DumpHandler::AutoUnpackAndDump(const nlohmann::json& params) {
     
     nlohmann::json response = DumpResultToJson(result);
     
-    // 添加额外的自动脱壳信息
+    // 娣诲姞棰濆鐨勮嚜鍔ㄨ劚澹充俊鎭?
     if (result.success && result.newEP != 0) {
         response["detected_oep"] = StringUtils::FormatAddress(result.newEP);
     }
@@ -128,7 +128,7 @@ nlohmann::json DumpHandler::AutoUnpackAndDump(const nlohmann::json& params) {
 nlohmann::json DumpHandler::AnalyzeModule(const nlohmann::json& params) {
     std::string module;
     
-    // 如果没有提供 module 参数,使用主模块
+    // 濡傛灉娌℃湁鎻愪緵 module 鍙傛暟,浣跨敤涓绘ā鍧?
     if (!params.contains("module") || params["module"].is_null()) {
         Script::Module::ModuleInfo info;
         if (Script::Module::GetMainModuleInfo(&info)) {
@@ -148,7 +148,7 @@ nlohmann::json DumpHandler::AnalyzeModule(const nlohmann::json& params) {
 }
 
 nlohmann::json DumpHandler::DetectOEP(const nlohmann::json& params) {
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("module")) {
         throw InvalidParamsException("Missing required parameter: module");
     }
@@ -156,7 +156,7 @@ nlohmann::json DumpHandler::DetectOEP(const nlohmann::json& params) {
     std::string moduleStr = params["module"].get<std::string>();
     std::string strategy = params.value("strategy", "entropy");
     
-    // 验证策略参数
+    // 楠岃瘉绛栫暐鍙傛暟
     static const std::set<std::string> validStrategies = {
         "entropy", "code_analysis", "api_calls", "tls", "entrypoint"
     };
@@ -169,7 +169,7 @@ nlohmann::json DumpHandler::DetectOEP(const nlohmann::json& params) {
     
     auto& manager = DumpManager::Instance();
     
-    // 解析模块名或地址
+    // 瑙ｆ瀽妯″潡鍚嶆垨鍦板潃
     auto moduleBaseOpt = manager.ParseModuleOrAddress(moduleStr);
     if (!moduleBaseOpt.has_value()) {
         throw InvalidParamsException("Invalid module name or address: " + moduleStr);
@@ -218,12 +218,12 @@ nlohmann::json DumpHandler::GetDumpableRegions(const nlohmann::json& params) {
 }
 
 nlohmann::json DumpHandler::FixImports(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Fixing imports requires write permission");
     }
     
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("module_base")) {
         throw InvalidParamsException("Missing required parameter: module_base");
     }
@@ -235,7 +235,7 @@ nlohmann::json DumpHandler::FixImports(const nlohmann::json& params) {
     std::string baseStr = params["module_base"].get<std::string>();
     uint64_t moduleBase = StringUtils::ParseAddress(baseStr);
     
-    // 从JSON数组转换为字节向量
+    // 浠嶫SON鏁扮粍杞崲涓哄瓧鑺傚悜閲?
     std::vector<uint8_t> buffer;
     for (const auto& byte : params["buffer"]) {
         buffer.push_back(byte.get<uint8_t>());
@@ -256,7 +256,7 @@ nlohmann::json DumpHandler::FixImports(const nlohmann::json& params) {
     result["success"] = success;
     
     if (success) {
-        // 转换回JSON数组
+        // 杞崲鍥濲SON鏁扮粍
         nlohmann::json bufferArray = nlohmann::json::array();
         for (uint8_t byte : buffer) {
             bufferArray.push_back(byte);
@@ -268,12 +268,12 @@ nlohmann::json DumpHandler::FixImports(const nlohmann::json& params) {
 }
 
 nlohmann::json DumpHandler::RebuildPE(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Rebuilding PE requires write permission");
     }
     
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("module_base")) {
         throw InvalidParamsException("Missing required parameter: module_base");
     }
@@ -285,7 +285,7 @@ nlohmann::json DumpHandler::RebuildPE(const nlohmann::json& params) {
     std::string baseStr = params["module_base"].get<std::string>();
     uint64_t moduleBase = StringUtils::ParseAddress(baseStr);
     
-    // 从JSON数组转换为字节向量
+    // 浠嶫SON鏁扮粍杞崲涓哄瓧鑺傚悜閲?
     std::vector<uint8_t> buffer;
     for (const auto& byte : params["buffer"]) {
         buffer.push_back(byte.get<uint8_t>());
@@ -304,7 +304,7 @@ nlohmann::json DumpHandler::RebuildPE(const nlohmann::json& params) {
     result["success"] = success;
     
     if (success) {
-        // 转换回JSON数组
+        // 杞崲鍥濲SON鏁扮粍
         nlohmann::json bufferArray = nlohmann::json::array();
         for (uint8_t byte : buffer) {
             bufferArray.push_back(byte);
@@ -315,7 +315,7 @@ nlohmann::json DumpHandler::RebuildPE(const nlohmann::json& params) {
     return result;
 }
 
-// ========== 辅助方法 ==========
+// ========== 杈呭姪鏂规硶 ==========
 
 nlohmann::json DumpHandler::DumpResultToJson(const DumpResult& result) {
     nlohmann::json json;
@@ -334,7 +334,7 @@ nlohmann::json DumpHandler::DumpResultToJson(const DumpResult& result) {
             json["new_ep"] = StringUtils::FormatAddress(result.newEP);
         }
         
-        // 进度信息
+        // 杩涘害淇℃伅
         json["stage"] = static_cast<int>(result.finalProgress.stage);
         json["progress"] = result.finalProgress.progress;
         json["message"] = result.finalProgress.message;
@@ -374,3 +374,4 @@ nlohmann::json DumpHandler::MemoryRegionDumpToJson(const MemoryRegionDump& regio
 }
 
 } // namespace MCP
+

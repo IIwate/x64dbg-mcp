@@ -1,5 +1,6 @@
 #include "ScriptHandler.h"
 #include "../core/Logger.h"
+#include "../core/PermissionChecker.h"
 #include <sstream>
 
 #ifdef XDBG_SDK_AVAILABLE
@@ -12,6 +13,13 @@ bool ScriptHandler::lastSuccess = false;
 
 json ScriptHandler::execute(const json& params) {
     try {
+        if (!MCP::PermissionChecker::Instance().IsScriptExecutionAllowed()) {
+            return {
+                {"success", false},
+                {"error", "Script execution is disabled by permissions"}
+            };
+        }
+
         if (!params.contains("command") || !params["command"].is_string()) {
             return {
                 {"success", false},
@@ -57,6 +65,13 @@ json ScriptHandler::execute(const json& params) {
 
 json ScriptHandler::executeBatch(const json& params) {
     try {
+        if (!MCP::PermissionChecker::Instance().IsScriptExecutionAllowed()) {
+            return {
+                {"success", false},
+                {"error", "Script execution is disabled by permissions"}
+            };
+        }
+
         if (!params.contains("commands") || !params["commands"].is_array()) {
             return {
                 {"success", false},

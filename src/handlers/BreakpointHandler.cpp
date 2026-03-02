@@ -1,4 +1,4 @@
-#include "BreakpointHandler.h"
+﻿#include "BreakpointHandler.h"
 #include "../business/BreakpointManager.h"
 #include "../core/MethodDispatcher.h"
 #include "../core/PermissionChecker.h"
@@ -24,12 +24,12 @@ void BreakpointHandler::RegisterMethods() {
 }
 
 nlohmann::json BreakpointHandler::Set(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsBreakpointModificationAllowed()) {
         throw PermissionDeniedException("Setting breakpoint requires write permission");
     }
     
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("address")) {
         throw InvalidParamsException(
             "Missing required parameter: address. "
@@ -50,7 +50,7 @@ nlohmann::json BreakpointHandler::Set(const nlohmann::json& params) {
         success = manager.SetSoftwareBreakpoint(address, name);
     }
     else if (typeStr == "hardware") {
-        // 解析硬件断点参数
+        // 瑙ｆ瀽纭欢鏂偣鍙傛暟
         std::string hwCondStr = params.value("hw_condition", "execute");
         int hwSize = params.value("hw_size", 1);
         
@@ -82,13 +82,13 @@ nlohmann::json BreakpointHandler::Set(const nlohmann::json& params) {
         throw MCPException("Failed to set breakpoint at: " + addressStr);
     }
     
-    // 如果有条件,设置条件
+    // 濡傛灉鏈夋潯浠?璁剧疆鏉′欢
     if (params.contains("condition")) {
         std::string condition = params["condition"].get<std::string>();
         manager.SetCondition(address, condition);
     }
     
-    // 构建响应
+    // 鏋勫缓鍝嶅簲
     nlohmann::json result;
     result["address"] = StringUtils::FormatAddress(address);
     result["type"] = typeStr;
@@ -102,12 +102,12 @@ nlohmann::json BreakpointHandler::Set(const nlohmann::json& params) {
 }
 
 nlohmann::json BreakpointHandler::Delete(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsBreakpointModificationAllowed()) {
         throw PermissionDeniedException("Deleting breakpoint requires write permission");
     }
     
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("address")) {
         throw InvalidParamsException("Missing required parameter: address");
     }
@@ -142,8 +142,8 @@ nlohmann::json BreakpointHandler::Delete(const nlohmann::json& params) {
 }
 
 nlohmann::json BreakpointHandler::Enable(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsBreakpointModificationAllowed()) {
         throw PermissionDeniedException("Enabling breakpoint requires write permission");
     }
     
@@ -169,8 +169,8 @@ nlohmann::json BreakpointHandler::Enable(const nlohmann::json& params) {
 }
 
 nlohmann::json BreakpointHandler::Disable(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsBreakpointModificationAllowed()) {
         throw PermissionDeniedException("Disabling breakpoint requires write permission");
     }
     
@@ -196,8 +196,8 @@ nlohmann::json BreakpointHandler::Disable(const nlohmann::json& params) {
 }
 
 nlohmann::json BreakpointHandler::Toggle(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsBreakpointModificationAllowed()) {
         throw PermissionDeniedException("Toggling breakpoint requires write permission");
     }
     
@@ -215,7 +215,7 @@ nlohmann::json BreakpointHandler::Toggle(const nlohmann::json& params) {
         throw MCPException("Failed to toggle breakpoint at: " + addressStr);
     }
     
-    // 获取当前状态
+    // 鑾峰彇褰撳墠鐘舵€?
     auto bp = manager.GetBreakpoint(address);
     
     nlohmann::json result;
@@ -274,8 +274,8 @@ nlohmann::json BreakpointHandler::Get(const nlohmann::json& params) {
 }
 
 nlohmann::json BreakpointHandler::DeleteAll(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsBreakpointModificationAllowed()) {
         throw PermissionDeniedException("Deleting breakpoints requires write permission");
     }
     
@@ -302,8 +302,8 @@ nlohmann::json BreakpointHandler::DeleteAll(const nlohmann::json& params) {
 }
 
 nlohmann::json BreakpointHandler::SetCondition(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsBreakpointModificationAllowed()) {
         throw PermissionDeniedException("Setting breakpoint condition requires write permission");
     }
     
@@ -334,8 +334,8 @@ nlohmann::json BreakpointHandler::SetCondition(const nlohmann::json& params) {
 }
 
 nlohmann::json BreakpointHandler::SetLog(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsBreakpointModificationAllowed()) {
         throw PermissionDeniedException("Setting log breakpoint requires write permission");
     }
     
@@ -366,8 +366,8 @@ nlohmann::json BreakpointHandler::SetLog(const nlohmann::json& params) {
 }
 
 nlohmann::json BreakpointHandler::ResetHitCount(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsBreakpointModificationAllowed()) {
         throw PermissionDeniedException("Resetting breakpoint hit count requires write permission");
     }
     
@@ -398,7 +398,7 @@ nlohmann::json BreakpointHandler::BreakpointInfoToJson(const BreakpointInfo& bp)
     
     json["address"] = StringUtils::FormatAddress(bp.address);
     
-    // 类型
+    // 绫诲瀷
     switch (bp.type) {
         case BreakpointType::Software:
             json["type"] = "software";
@@ -406,7 +406,7 @@ nlohmann::json BreakpointHandler::BreakpointInfoToJson(const BreakpointInfo& bp)
         case BreakpointType::Hardware:
             json["type"] = "hardware";
             
-            // 硬件断点特有属性
+            // 纭欢鏂偣鐗规湁灞炴€?
             switch (bp.condition) {
                 case HardwareBreakpointCondition::Execute:
                     json["hw_condition"] = "execute";
@@ -449,3 +449,4 @@ nlohmann::json BreakpointHandler::BreakpointInfoToJson(const BreakpointInfo& bp)
 }
 
 } // namespace MCP
+

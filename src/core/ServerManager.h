@@ -70,8 +70,8 @@ private:
     std::unique_ptr<TCPServer> m_tcpServer;
     std::unique_ptr<HeartbeatMonitor> m_heartbeatMonitor;
     
-    bool m_initialized;
-    bool m_running;
+    bool m_initialized = false;
+    bool m_running = false;
 };
 
 } // namespace MCP

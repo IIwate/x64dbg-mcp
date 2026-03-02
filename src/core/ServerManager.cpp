@@ -25,14 +25,14 @@ bool ServerManager::Initialize(const std::string& configPath) {
     
     Logger::Info("Initializing MCP Server...");
     
-    // 加载配置
+    // 鍔犺浇閰嶇疆
     auto& config = ConfigManager::Instance();
     if (!config.Load(configPath)) {
         Logger::Error("Failed to load configuration from: {}", configPath);
         return false;
     }
     
-    // 初始化日志系统
+    // 鍒濆鍖栨棩蹇楃郴缁?
     if (config.IsLoggingEnabled()) {
         std::string logFile = config.GetLogFile();
         std::string logLevelStr = config.GetLogLevel();
@@ -48,16 +48,16 @@ bool ServerManager::Initialize(const std::string& configPath) {
         }
     }
     
-    // 初始化权限检查器
+    // 鍒濆鍖栨潈闄愭鏌ュ櫒
     PermissionChecker::Instance().Initialize();
     
-    // 注册默认方法
+    // 娉ㄥ唽榛樿鏂规硶
     MethodDispatcher::Instance().RegisterDefaultMethods();
     
-    // 创建 TCP 服务器
+    // 鍒涘缓 TCP 鏈嶅姟鍣?
     m_tcpServer = std::make_unique<TCPServer>();
     
-    // 设置回调
+    // 璁剧疆鍥炶皟
     m_tcpServer->SetMessageHandler(
         std::bind(&ServerManager::OnMessageReceived, this, 
                  std::placeholders::_1, std::placeholders::_2)
@@ -90,22 +90,15 @@ bool ServerManager::Start() {
     std::string address = config.GetServerAddress();
     uint16_t port = config.GetServerPort();
     
-    // 启动 TCP 服务器
+    // 鍚姩 TCP 鏈嶅姟鍣?
     if (!m_tcpServer->Start(address, port)) {
         Logger::Error("Failed to start TCP server");
         return false;
     }
     
-    // 启动心跳监控（如果启用）
+    // 鍚姩蹇冭烦鐩戞帶锛堝鏋滃惎鐢級
     if (config.Get<bool>("features.enable_heartbeat", true)) {
-        uint32_t interval = config.Get<int>("features.heartbeat_interval_seconds", 30);
-        m_heartbeatMonitor = std::make_unique<HeartbeatMonitor>(
-            const_cast<ConnectionManager&>(
-                *reinterpret_cast<const ConnectionManager*>(&m_tcpServer)
-            )
-        );
-        // 注意：这里需要访问 TCPServer 内部的 ConnectionManager
-        // 在实际实现中，应该提供适当的接口
+        Logger::Warning("Heartbeat monitor is currently disabled in TCP mode");
     }
     
     m_running = true;
@@ -120,13 +113,13 @@ void ServerManager::Stop() {
     
     Logger::Info("Stopping MCP Server...");
     
-    // 停止心跳监控
+    // 鍋滄蹇冭烦鐩戞帶
     if (m_heartbeatMonitor) {
         m_heartbeatMonitor->Stop();
         m_heartbeatMonitor.reset();
     }
     
-    // 停止 TCP 服务器
+    // 鍋滄 TCP 鏈嶅姟鍣?
     if (m_tcpServer) {
         m_tcpServer->Stop();
     }
@@ -174,13 +167,13 @@ void ServerManager::OnConnectionChanged(ClientId clientId, bool connected) {
 
 void ServerManager::ProcessRequest(ClientId clientId, const std::string& message) {
     try {
-        // 解析请求
+        // 瑙ｆ瀽璇锋眰
         JSONRPCRequest request = JSONRPCParser::ParseRequest(message);
         
-        // 分发请求
+        // 鍒嗗彂璇锋眰
         JSONRPCResponse response = MethodDispatcher::Instance().Dispatch(request);
         
-        // 发送响应（通知消息不需要响应）
+        // 鍙戦€佸搷搴旓紙閫氱煡娑堟伅涓嶉渶瑕佸搷搴旓級
         if (!request.IsNotification()) {
             std::string responseStr = ResponseBuilder::Serialize(response);
             m_tcpServer->SendMessage(clientId, responseStr);
