@@ -501,7 +501,9 @@ void MCPHttpServer::HandleHttpRequest(SOCKET clientSocket, const std::string& re
     if (method == "GET" && path == "/sse") {
         HandleSSE(clientSocket);
     }
-    else if (method == "POST" && (path == "/message" || path == "/" || path == "/messages")) {
+    else if (method == "POST" &&
+             (path == "/message" || path == "/" || path == "/messages" ||
+              path == "/rpc" || path == "/rpc/")) {
         // 鏀寔澶氱 POST 璺緞锛?, /message, /messages
         HandlePostMessage(clientSocket, body);
     }

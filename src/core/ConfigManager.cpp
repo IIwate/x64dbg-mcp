@@ -49,6 +49,7 @@ json ConfigManager::CreateDefaultConfig() const {
     config["features"]["enable_heartbeat"] = true;
     config["features"]["heartbeat_interval_seconds"] = 30;
     config["features"]["enable_batch_requests"] = true;
+    config["features"]["auto_start_mcp_on_plugin_load"] = false;
     
     return config;
 }

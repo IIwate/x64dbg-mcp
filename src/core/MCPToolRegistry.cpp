@@ -652,6 +652,13 @@ void MCPToolRegistry::RegisterDefaultTools() {
             {"module", "string", "Module name or base address", true, nullptr, nullptr},
             {"output_path", "string", "Output file path", true, nullptr, nullptr},
             {"fix_imports", "boolean", "Fix import table", false, true, nullptr},
+            {"fix_relocations", "boolean", "Fix relocations", false, false, nullptr},
+            {"fix_oep", "boolean", "Fix entry point", false, true, nullptr},
+            {"remove_integrity_check", "boolean", "Clear PE checksum", false, true, nullptr},
+            {"rebuild_pe", "boolean", "Rebuild PE headers", false, true, nullptr},
+            {"auto_detect_oep", "boolean", "Auto-detect OEP", false, false, nullptr},
+            {"dump_full_image", "boolean", "Dump full image including non-committed pages", false, false, nullptr},
+            {"options", "object", "Optional nested options object (legacy compatibility)", false, nullptr, nullptr},
             {"oep", "string", "Original Entry Point (optional)", false, nullptr, nullptr}
         }
     });
@@ -663,7 +670,8 @@ void MCPToolRegistry::RegisterDefaultTools() {
         {
             {"address", "string", "Start address", true, nullptr, nullptr},
             {"size", "integer", "Size in bytes", true, nullptr, nullptr},
-            {"output_path", "string", "Output file path", true, nullptr, nullptr}
+            {"output_path", "string", "Output file path", true, nullptr, nullptr},
+            {"as_raw_binary", "boolean", "Store bytes as-is without PE rebuild", false, false, nullptr}
         }
     });
     
@@ -675,7 +683,7 @@ void MCPToolRegistry::RegisterDefaultTools() {
             {"module", "string", "Module name or base address", true, nullptr, nullptr},
             {"output_path", "string", "Output file path", true, nullptr, nullptr},
             {"max_iterations", "integer", "Maximum unpacking iterations", false, 10, nullptr},
-            {"strategy", "string", "Unpacking strategy (entropy, code_analysis, api_calls, tls, entrypoint)", false, "entropy",
+            {"strategy", "string", "Unpacking strategy (entropy, code_analysis, api_calls, tls, entrypoint)", false, "code_analysis",
              json::array({"entropy", "code_analysis", "api_calls", "tls", "entrypoint"})}
         }
     });
@@ -695,7 +703,7 @@ void MCPToolRegistry::RegisterDefaultTools() {
         "dump.detect_oep",
         {
             {"module", "string", "Module name or base address", true, nullptr, nullptr},
-            {"strategy", "string", "Detection strategy (entropy, code_analysis, api_calls, tls, entrypoint)", false, "entropy",
+            {"strategy", "string", "Detection strategy (entropy, code_analysis, api_calls, tls, entrypoint)", false, "code_analysis",
              json::array({"entropy", "code_analysis", "api_calls", "tls", "entrypoint"})}
         }
     });
@@ -704,7 +712,9 @@ void MCPToolRegistry::RegisterDefaultTools() {
         "dump_get_dumpable_regions",
         "List dumpable memory regions",
         "dump.get_dumpable_regions",
-        {}
+        {
+            {"module_base", "string", "Optional module base address filter", false, nullptr, nullptr}
+        }
     });
     
     RegisterTool({

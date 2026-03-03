@@ -41,17 +41,45 @@ nlohmann::json DumpHandler::DumpModule(const nlohmann::json& params) {
     std::string module = params["module"].get<std::string>();
     std::string outputPath = params["output_path"].get<std::string>();
     
-    // 瑙ｆ瀽閫夐」
+    // Support both flattened tool arguments and nested `options` object.
     DumpOptions options;
-    if (params.contains("options")) {
-        const auto& opts = params["options"];
-        options.fixImports = opts.value("fix_imports", true);
-        options.fixRelocations = opts.value("fix_relocations", false);
-        options.fixOEP = opts.value("fix_oep", true);
-        options.removeIntegrityCheck = opts.value("remove_integrity_check", true);
-        options.rebuildPE = opts.value("rebuild_pe", true);
-        options.autoDetectOEP = opts.value("auto_detect_oep", false);
-        options.dumpFullImage = opts.value("dump_full_image", false);
+    nlohmann::json nestedOptions = nlohmann::json::object();
+    if (params.contains("options") && !params["options"].is_null()) {
+        if (!params["options"].is_object()) {
+            throw InvalidParamsException("Parameter 'options' must be an object");
+        }
+        nestedOptions = params["options"];
+    }
+
+    auto readBoolOption = [&](const char* key, bool defaultValue) {
+        if (nestedOptions.contains(key)) {
+            return nestedOptions[key].get<bool>();
+        }
+        if (params.contains(key)) {
+            return params[key].get<bool>();
+        }
+        return defaultValue;
+    };
+
+    options.fixImports = readBoolOption("fix_imports", true);
+    options.fixRelocations = readBoolOption("fix_relocations", false);
+    options.fixOEP = readBoolOption("fix_oep", true);
+    options.removeIntegrityCheck = readBoolOption("remove_integrity_check", true);
+    options.rebuildPE = readBoolOption("rebuild_pe", true);
+    options.autoDetectOEP = readBoolOption("auto_detect_oep", false);
+    options.dumpFullImage = readBoolOption("dump_full_image", false);
+
+    const bool nestedHasOEP = nestedOptions.contains("oep");
+    const bool topLevelHasOEP = params.contains("oep");
+    if (nestedHasOEP || topLevelHasOEP) {
+        const nlohmann::json& oepNode = nestedHasOEP ? nestedOptions["oep"] : params["oep"];
+        if (!oepNode.is_string()) {
+            throw InvalidParamsException("Parameter 'oep' must be a string");
+        }
+
+        const uint64_t forcedOEP = StringUtils::ParseAddress(oepNode.get<std::string>());
+        options.forcedOEP = forcedOEP;
+        options.fixOEP = true;
     }
     
     auto& manager = DumpManager::Instance();
@@ -111,7 +139,7 @@ nlohmann::json DumpHandler::AutoUnpackAndDump(const nlohmann::json& params) {
     std::string module = params["module"].get<std::string>();
     std::string outputPath = params["output_path"].get<std::string>();
     int maxIterations = params.value("max_iterations", 3);
-    std::string strategy = params.value("strategy", "entropy");
+    std::string strategy = params.value("strategy", "code_analysis");
 
     static const std::set<std::string> validStrategies = {
         "entropy", "code_analysis", "api_calls", "tls", "entrypoint"
@@ -164,7 +192,7 @@ nlohmann::json DumpHandler::DetectOEP(const nlohmann::json& params) {
     }
     
     std::string moduleStr = params["module"].get<std::string>();
-    std::string strategy = params.value("strategy", "entropy");
+    std::string strategy = params.value("strategy", "code_analysis");
     
     // 楠岃瘉绛栫暐鍙傛暟
     static const std::set<std::string> validStrategies = {

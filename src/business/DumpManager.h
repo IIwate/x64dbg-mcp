@@ -18,6 +18,8 @@ struct DumpOptions {
     bool rebuildPE = true;          // 重建PE头
     bool autoDetectOEP = false;     // 自动检测OEP
     bool dumpFullImage = false;     // dump完整镜像(包括未映射部分)
+    // Force a specific absolute OEP when provided.
+    std::optional<uint64_t> forcedOEP;
 };
 
 /**
@@ -133,7 +135,7 @@ public:
         const std::string& moduleNameOrAddress,
         const std::string& outputPath,
         int maxIterations = 3,
-        const std::string& oepStrategy = "entropy",
+        const std::string& oepStrategy = "code_analysis",
         ProgressCallback progressCallback = nullptr
     );
     
@@ -150,7 +152,7 @@ public:
      * @param strategy 检测策略: "entropy", "code_analysis", "api_calls", "tls"
      * @return OEP地址,如果未找到返回nullopt
      */
-    std::optional<uint64_t> DetectOEP(uint64_t moduleBase, const std::string& strategy = "entropy");
+    std::optional<uint64_t> DetectOEP(uint64_t moduleBase, const std::string& strategy = "code_analysis");
     
     /**
      * @brief 获取可dump的内存区域列表

@@ -42,6 +42,7 @@
     "enable_notifications": true,
     "enable_heartbeat": true,
     "heartbeat_interval_seconds": 30,
-    "enable_batch_requests": true
+    "enable_batch_requests": true,
+    "auto_start_mcp_on_plugin_load": false
   }
 }

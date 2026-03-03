@@ -288,6 +288,9 @@ json ConfigEditor::GetConfigFromControls(HWND hwndDlg) {
         GetDlgItemInt(hwndDlg, IDC_HEARTBEAT_INTERVAL, NULL, FALSE);
     config["features"]["enable_batch_requests"] = 
         IsDlgButtonChecked(hwndDlg, IDC_FEATURE_BATCH) == BST_CHECKED;
+    // Keep menu-managed toggle persisted even though it has no dialog control.
+    config["features"]["auto_start_mcp_on_plugin_load"] =
+        s_config.value("features", json::object()).value("auto_start_mcp_on_plugin_load", false);
     
     // 保留version字段
     config["version"] = s_config.value("version", "1.0.1");

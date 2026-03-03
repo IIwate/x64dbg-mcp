@@ -45,6 +45,7 @@ static int g_pluginHandle = 0;
 static int g_menuHandle = 0;
 static std::unique_ptr<MCP::MCPHttpServer> g_mcpHttpServer;
 static HMODULE g_hModule = NULL;  // 鎻掍欢妯″潡鍙ユ�?
+static constexpr const char* kAutoStartConfigKey = "features.auto_start_mcp_on_plugin_load";
 
 // 鑿滃崟鍛戒护ID - 浣跨敤鍞竴鐨処D�?
 enum MenuCommands {
@@ -52,10 +53,81 @@ enum MenuCommands {
     MENU_STOP_MCP_HTTP = 2,
     MENU_EDIT_CONFIG = 3,
     MENU_SHOW_CONFIG = 4,
-    MENU_ABOUT = 5
+    MENU_AUTO_START_MCP = 5,
+    MENU_ABOUT = 6
 };
 
 namespace MCP {
+
+static std::string GetPluginBaseDirectory() {
+    char modulePath[MAX_PATH] = {0};
+    if (g_hModule && GetModuleFileNameA(g_hModule, modulePath, MAX_PATH) > 0) {
+        std::filesystem::path dllPath(modulePath);
+        return dllPath.parent_path().string();
+    }
+    return std::string();
+}
+
+static std::string GetActiveConfigPath() {
+    auto& config = ConfigManager::Instance();
+    std::string configPath = config.GetConfigPath();
+
+    if (!configPath.empty()) {
+        std::filesystem::path loadedPath(configPath);
+        if (loadedPath.is_relative()) {
+            const std::string baseDir = GetPluginBaseDirectory();
+            if (!baseDir.empty()) {
+                configPath = (std::filesystem::path(baseDir) / loadedPath).lexically_normal().string();
+            }
+        }
+        return configPath;
+    }
+
+    const std::string baseDir = GetPluginBaseDirectory();
+    if (!baseDir.empty()) {
+        return (std::filesystem::path(baseDir) / PLUGIN_DIR_NAME / "config.json").string();
+    }
+
+    return std::string(PLUGIN_DIR_NAME) + "\\config.json";
+}
+
+static bool StartMcpHttpServer(bool reloadConfig) {
+    if (!g_mcpHttpServer) {
+        g_mcpHttpServer = std::make_unique<MCP::MCPHttpServer>();
+    }
+
+    if (g_mcpHttpServer->IsRunning()) {
+        _plugin_logputs("[MCP] HTTP Server is already running");
+        return true;
+    }
+
+    auto& config = ConfigManager::Instance();
+    const std::string configPath = GetActiveConfigPath();
+
+    if (reloadConfig && !config.Load(configPath)) {
+        _plugin_logprintf("[MCP] Failed to reload config from: %s\n", configPath.c_str());
+    }
+
+    MCP::PermissionChecker::Instance().Initialize();
+
+    std::string address = config.GetServerAddress();
+    int port = static_cast<int>(config.GetServerPort());
+
+    if (g_mcpHttpServer->Start(address, port)) {
+        _plugin_logprintf("[MCP] HTTP Server started on http://%s:%d\n", address.c_str(), port);
+        _plugin_logputs("[MCP] Configure VSCode/Claude to connect via SSE");
+        return true;
+    }
+
+    _plugin_logputs("[MCP] Failed to start HTTP Server");
+    return false;
+}
+
+static void UpdateAutoStartMenuCheck() {
+    const bool enabled = ConfigManager::Instance().Get<bool>(kAutoStartConfigKey, false);
+    _plugin_menuentrysetchecked(g_pluginHandle, MENU_AUTO_START_MCP, enabled);
+}
+
 
 /**
  * @brief x64dbg 鍥炶�? 鍒濆鍖栬皟�?
@@ -83,8 +155,9 @@ static void CB_Breakpoint(CBTYPE cbType, void* callbackInfo) {
     }
 
     if (address == 0) {
-        duint cip = 0;
-        if (DbgValFromString("cip", &cip)) {
+        // Current x64dbg SDK exposes DbgValFromString as a direct value return.
+        const duint cip = DbgValFromString("cip");
+        if (cip != 0) {
             address = static_cast<uint64_t>(cip);
         }
     }
@@ -194,12 +267,8 @@ static void CB_MenuEntry(CBTYPE cbType, void* callbackInfo) {
             auto& config = ConfigManager::Instance();
             
             // 鏋勫缓閰嶇疆鏂囦欢璺緞
-            std::string configPath = config.GetConfigPath();
-            if (configPath.empty()) {
-                // 濡傛灉閰嶇疆鏈姞杞?浣跨敤榛樿璺�?
-                configPath = std::string(PLUGIN_DIR_NAME) + "\\config.json";
-                _plugin_logprintf("[MCP] Using default config path: %s\n", configPath.c_str());
-            }
+            std::string configPath = GetActiveConfigPath();
+            _plugin_logprintf("[MCP] Config path: %s\n", configPath.c_str());
             
             // 鑾峰彇x64dbg涓荤獥鍙ｅ彞�?
             HWND hwndDlg = GuiGetWindowHandle();
@@ -209,6 +278,7 @@ static void CB_MenuEntry(CBTYPE cbType, void* callbackInfo) {
                 // 閲嶆柊鍔犺浇閰嶇�?
                 config.Load(configPath);
                 MCP::PermissionChecker::Instance().Initialize();
+                UpdateAutoStartMenuCheck();
                 
                 // 濡傛灉鏈嶅姟鍣ㄦ鍦ㄨ繍�?鎻愮ず闇€瑕侀噸鍚?
                 if (g_mcpHttpServer && g_mcpHttpServer->IsRunning()) {
@@ -228,39 +298,10 @@ static void CB_MenuEntry(CBTYPE cbType, void* callbackInfo) {
             _plugin_logputs("[MCP] Current Configuration:");
             _plugin_logprintf("  Address: %s\n", config.Get<std::string>("server.address", "127.0.0.1").c_str());
             _plugin_logprintf("  Port: %d\n", config.Get<int>("server.port", 3000));
+            _plugin_logprintf("  Auto Start MCP on Load: %s\n", config.Get<bool>(kAutoStartConfigKey, false) ? "ON" : "OFF");
         }
         else if (info->hEntry == MENU_START_MCP_HTTP) {
-            // 鍚�?MCP HTTP 鏈嶅姟鍣?
-            if (!g_mcpHttpServer) {
-                g_mcpHttpServer = std::make_unique<MCP::MCPHttpServer>();
-            }
-            
-            if (g_mcpHttpServer->IsRunning()) {
-                _plugin_logputs("[MCP] HTTP Server is already running");
-                return;
-            }
-            
-            auto& config = ConfigManager::Instance();
-            std::string configPath = config.GetConfigPath();
-            if (configPath.empty()) {
-                configPath = std::string(PLUGIN_DIR_NAME) + "\\config.json";
-            }
-
-            // Ensure manual edits in config file are applied before startup.
-            if (!config.Load(configPath)) {
-                _plugin_logprintf("[MCP] Failed to reload config from: %s\n", configPath.c_str());
-            }
-            MCP::PermissionChecker::Instance().Initialize();
-
-            std::string address = config.GetServerAddress();
-            int port = static_cast<int>(config.GetServerPort());
-
-            if (g_mcpHttpServer->Start(address, port)) {
-                _plugin_logprintf("[MCP] HTTP Server started on http://%s:%d\n", address.c_str(), port);
-                _plugin_logputs("[MCP] Configure VSCode/Claude to connect via SSE");
-            } else {
-                _plugin_logputs("[MCP] Failed to start HTTP Server");
-            }
+            StartMcpHttpServer(true);
         }
         else if (info->hEntry == MENU_STOP_MCP_HTTP) {
             // 鍋滄�?MCP HTTP 鏈嶅姟鍣?
@@ -271,6 +312,23 @@ static void CB_MenuEntry(CBTYPE cbType, void* callbackInfo) {
             
             g_mcpHttpServer->Stop();
             _plugin_logputs("[MCP] HTTP Server stopped");
+        }
+        else if (info->hEntry == MENU_AUTO_START_MCP) {
+            auto& config = ConfigManager::Instance();
+            const std::string configPath = GetActiveConfigPath();
+            const bool currentValue = config.Get<bool>(kAutoStartConfigKey, false);
+            const bool newValue = !currentValue;
+
+            config.Set<bool>(kAutoStartConfigKey, newValue);
+            if (config.Save(configPath)) {
+                _plugin_menuentrysetchecked(g_pluginHandle, MENU_AUTO_START_MCP, newValue);
+                _plugin_logprintf("[MCP] Auto-start MCP on plugin load: %s\n", newValue ? "ON" : "OFF");
+                _plugin_logprintf("[MCP] Auto-start config saved to: %s\n", configPath.c_str());
+            } else {
+                config.Set<bool>(kAutoStartConfigKey, currentValue);
+                _plugin_logputs("[MCP] Failed to save auto-start option to config");
+                _plugin_logprintf("[MCP] Save target path: %s\n", configPath.c_str());
+            }
         }
         else if (info->hEntry == MENU_ABOUT) {
             // 鍏充�?
@@ -401,7 +459,7 @@ extern "C" __declspec(dllexport) bool pluginit(PLUG_INITSTRUCT* initStruct) {
         // 鍔犺浇閰嶇疆锛堝鏋滀笉瀛樺湪鍒欏垱寤洪粯璁ら厤缃�?
         try {
             auto& config = MCP::ConfigManager::Instance();
-            std::string configPath = std::string(PLUGIN_DIR_NAME) + "\\config.json";
+            std::string configPath = MCP::GetActiveConfigPath();
             
             // 妫€鏌ラ厤缃枃浠舵槸鍚﹀瓨鍦?
             if (!std::filesystem::exists(configPath)) {
@@ -409,7 +467,10 @@ extern "C" __declspec(dllexport) bool pluginit(PLUG_INITSTRUCT* initStruct) {
                 _plugin_logputs("[MCP] Creating default config.json...");
                 
                 // 鍒涘缓鐩綍
-                std::filesystem::create_directories(PLUGIN_DIR_NAME);
+                std::filesystem::path configFilePath(configPath);
+                if (configFilePath.has_parent_path()) {
+                    std::filesystem::create_directories(configFilePath.parent_path());
+                }
                 
                 // 鍒涘缓榛樿閰嶇�?
                 std::ofstream configFile(configPath);
@@ -458,7 +519,8 @@ extern "C" __declspec(dllexport) bool pluginit(PLUG_INITSTRUCT* initStruct) {
     "enable_notifications": true,
     "enable_heartbeat": true,
     "heartbeat_interval_seconds": 30,
-    "enable_batch_requests": true
+    "enable_batch_requests": true,
+    "auto_start_mcp_on_plugin_load": false
   }
 })";
                     configFile.close();
@@ -519,6 +581,17 @@ extern "C" __declspec(dllexport) bool pluginit(PLUG_INITSTRUCT* initStruct) {
             _plugin_logprintf("[MCP] Failed to initialize event handler: %s\n", e.what());
         }
         
+        // Optional auto-start when plugin is loaded.
+        try {
+            if (MCP::ConfigManager::Instance().Get<bool>(kAutoStartConfigKey, false)) {
+                _plugin_logputs("[MCP] Auto-start option enabled, starting MCP HTTP Server...");
+                MCP::StartMcpHttpServer(false);
+            }
+        } catch (const std::exception& e) {
+            MCP::Logger::Error("Failed to auto-start MCP HTTP server: {}", e.what());
+            _plugin_logprintf("[MCP] Failed to auto-start MCP HTTP server: %s\n", e.what());
+        }
+
         MCP::Logger::Info("Plugin initialized successfully");
         _plugin_logputs("[MCP] Plugin initialized successfully");
         return true;  // �?杩斿洖true琛ㄧず鍒濆鍖栨垚鍔?
@@ -567,12 +640,15 @@ extern "C" __declspec(dllexport) bool plugsetup(PLUG_SETUPSTRUCT* setupStruct) {
         // �?浣跨�?_plugin_menuaddentry 娣诲姞鍙偣鍑荤殑鑿滃崟�?
         _plugin_menuaddentry(g_menuHandle, MENU_START_MCP_HTTP, "Start &MCP HTTP Server");
         _plugin_menuaddentry(g_menuHandle, MENU_STOP_MCP_HTTP, "Stop M&CP HTTP Server");
+        _plugin_menuaddentry(g_menuHandle, MENU_AUTO_START_MCP, "Auto Start MCP on Plugin &Load");
         _plugin_menuaddseparator(g_menuHandle);  // 鍒嗛殧绗?
         _plugin_menuaddentry(g_menuHandle, MENU_EDIT_CONFIG, "&Edit Config");
         _plugin_menuaddentry(g_menuHandle, MENU_SHOW_CONFIG, "Show &Config");
         _plugin_menuaddseparator(g_menuHandle);  // 鍒嗛殧绗?
         _plugin_menuaddentry(g_menuHandle, MENU_ABOUT, "&About");
         
+        MCP::UpdateAutoStartMenuCheck();
+
         _plugin_logputs("[MCP] Plugin menu created successfully");
         _plugin_logprintf("[MCP] Menu handle: %d\n", g_menuHandle);
         _plugin_logprintf("[MCP] Menu entries added\n");
