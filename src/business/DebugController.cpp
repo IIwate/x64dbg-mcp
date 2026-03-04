@@ -51,8 +51,31 @@ bool DebugController::Pause() {
         return true;
     }
     
-    Logger::Debug("Executing pause command");
-    return ExecuteCommand("pause");
+    bool breakRequested = false;
+
+#ifdef XDBG_SDK_AVAILABLE
+    // Force an async break first; command-only pause may not interrupt long-running loops.
+    HANDLE processHandle = DbgGetProcessHandle();
+    if (processHandle != nullptr && processHandle != INVALID_HANDLE_VALUE) {
+        if (DebugBreakProcess(processHandle) != FALSE) {
+            breakRequested = true;
+            Logger::Debug("Pause requested via DebugBreakProcess");
+        } else {
+            Logger::Warning("DebugBreakProcess failed with error {}", GetLastError());
+        }
+    }
+#endif
+
+    if (!breakRequested) {
+        Logger::Debug("Executing pause command");
+        breakRequested = ExecuteCommand("pause");
+    }
+
+    if (!breakRequested) {
+        return false;
+    }
+
+    return WaitForPause(5000);
 }
 
 uint64_t DebugController::StepInto() {

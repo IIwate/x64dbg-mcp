@@ -1,5 +1,6 @@
 #include "ScriptHandler.h"
 #include "../core/Logger.h"
+#include "../core/PermissionChecker.h"
 #include <sstream>
 
 #ifdef XDBG_SDK_AVAILABLE
@@ -9,9 +10,17 @@
 
 std::string ScriptHandler::lastResult = "";
 bool ScriptHandler::lastSuccess = false;
+std::mutex ScriptHandler::resultMutex;
 
 json ScriptHandler::execute(const json& params) {
     try {
+        if (!MCP::PermissionChecker::Instance().IsScriptExecutionAllowed()) {
+            return {
+                {"success", false},
+                {"error", "Script execution is disabled by permissions"}
+            };
+        }
+
         if (!params.contains("command") || !params["command"].is_string()) {
             return {
                 {"success", false},
@@ -22,11 +31,13 @@ json ScriptHandler::execute(const json& params) {
         std::string command = params["command"];
         MCP::Logger::Debug("Executing script command: {}", command);
 
-        // Execute the command
         bool success = DbgCmdExec(command.c_str());
-        
-        lastSuccess = success;
-        lastResult = success ? "Command executed successfully" : "Command execution failed";
+
+        {
+            std::lock_guard<std::mutex> lock(resultMutex);
+            lastSuccess = success;
+            lastResult = success ? "Command executed successfully" : "Command execution failed";
+        }
 
         json result = {
             {"success", success},
@@ -37,10 +48,8 @@ json ScriptHandler::execute(const json& params) {
             result["error"] = "Command execution failed";
         }
 
-        // If command has output, try to capture it
         if (params.contains("capture_output") && params["capture_output"].is_boolean() && params["capture_output"]) {
-            // Note: x64dbg doesn't provide direct command output capture
-            // This would require additional implementation
+            std::lock_guard<std::mutex> lock(resultMutex);
             result["output"] = lastResult;
         }
 
@@ -57,6 +66,13 @@ json ScriptHandler::execute(const json& params) {
 
 json ScriptHandler::executeBatch(const json& params) {
     try {
+        if (!MCP::PermissionChecker::Instance().IsScriptExecutionAllowed()) {
+            return {
+                {"success", false},
+                {"error", "Script execution is disabled by permissions"}
+            };
+        }
+
         if (!params.contains("commands") || !params["commands"].is_array()) {
             return {
                 {"success", false},
@@ -84,7 +100,9 @@ json ScriptHandler::executeBatch(const json& params) {
                 });
                 allSuccess = false;
                 failCount++;
-                if (stopOnError) break;
+                if (stopOnError) {
+                    break;
+                }
                 continue;
             }
 
@@ -110,13 +128,15 @@ json ScriptHandler::executeBatch(const json& params) {
 
             results.push_back(cmdResult);
         }
-        
-        // 更新 lastResult 和 lastSuccess
-        lastSuccess = allSuccess;
-        if (allSuccess) {
-            lastResult = "All " + std::to_string(successCount) + " commands executed successfully";
-        } else {
-            lastResult = std::to_string(successCount) + " succeeded, " + std::to_string(failCount) + " failed";
+
+        {
+            std::lock_guard<std::mutex> lock(resultMutex);
+            lastSuccess = allSuccess;
+            if (allSuccess) {
+                lastResult = "All " + std::to_string(successCount) + " commands executed successfully";
+            } else {
+                lastResult = std::to_string(successCount) + " succeeded, " + std::to_string(failCount) + " failed";
+            }
         }
 
         return {
@@ -137,15 +157,24 @@ json ScriptHandler::executeBatch(const json& params) {
 }
 
 json ScriptHandler::getLastResult(const json& params) {
-    json result = {
-        {"success", lastSuccess},
-        {"result", lastResult}
-    };
-    
-    // 当失败时，添加 error 字段提供更多信息
-    if (!lastSuccess) {
-        result["error"] = lastResult.empty() ? "No script executed yet or last execution failed" : lastResult;
+    (void)params;
+
+    bool successSnapshot = false;
+    std::string resultSnapshot;
+    {
+        std::lock_guard<std::mutex> lock(resultMutex);
+        successSnapshot = lastSuccess;
+        resultSnapshot = lastResult;
     }
-    
+
+    json result = {
+        {"success", successSnapshot},
+        {"result", resultSnapshot}
+    };
+
+    if (!successSnapshot) {
+        result["error"] = resultSnapshot.empty() ? "No script executed yet or last execution failed" : resultSnapshot;
+    }
+
     return result;
 }

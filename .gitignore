@@ -6,6 +6,7 @@ bin/
 lib/
 dist/
 out/
+Agents/
 cmake-build-*/
 
 # Visual Studio

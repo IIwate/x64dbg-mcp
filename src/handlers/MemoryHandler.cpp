@@ -1,4 +1,4 @@
-#include "MemoryHandler.h"
+﻿#include "MemoryHandler.h"
 #include "../business/MemoryManager.h"
 #include "../core/MethodDispatcher.h"
 #include "../core/PermissionChecker.h"
@@ -23,7 +23,7 @@ void MemoryHandler::RegisterMethods() {
 }
 
 nlohmann::json MemoryHandler::Read(const nlohmann::json& params) {
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("address")) {
         throw InvalidParamsException("Missing required parameter: address");
     }
@@ -35,14 +35,14 @@ nlohmann::json MemoryHandler::Read(const nlohmann::json& params) {
     size_t size = params["size"].get<size_t>();
     std::string encoding = params.value("encoding", "hex");
     
-    // 解析地址
+    // 瑙ｆ瀽鍦板潃
     uint64_t address = StringUtils::ParseAddress(addressStr);
     
-    // 读取内存
+    // 璇诲彇鍐呭瓨
     auto& manager = MemoryManager::Instance();
     auto data = manager.Read(address, size);
     
-    // 构建响应
+    // 鏋勫缓鍝嶅簲
     nlohmann::json result;
     result["address"] = StringUtils::FormatAddress(address);
     result["size"] = data.size();
@@ -53,12 +53,12 @@ nlohmann::json MemoryHandler::Read(const nlohmann::json& params) {
 }
 
 nlohmann::json MemoryHandler::Write(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Memory write requires write permission");
     }
     
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("address")) {
         throw InvalidParamsException("Missing required parameter: address");
     }
@@ -70,7 +70,7 @@ nlohmann::json MemoryHandler::Write(const nlohmann::json& params) {
     std::string dataStr = params["data"].get<std::string>();
     std::string encoding = params.value("encoding", "hex");
     
-    // 解析地址和数据
+    // 瑙ｆ瀽鍦板潃鍜屾暟鎹?
     uint64_t address = StringUtils::ParseAddress(addressStr);
     auto data = DecodeData(dataStr, encoding);
     
@@ -78,11 +78,11 @@ nlohmann::json MemoryHandler::Write(const nlohmann::json& params) {
         throw InvalidParamsException("Empty data");
     }
     
-    // 写入内存
+    // 鍐欏叆鍐呭瓨
     auto& manager = MemoryManager::Instance();
     size_t bytesWritten = manager.Write(address, data);
     
-    // 构建响应
+    // 鏋勫缓鍝嶅簲
     nlohmann::json result;
     result["address"] = StringUtils::FormatAddress(address);
     result["bytes_written"] = bytesWritten;
@@ -91,7 +91,7 @@ nlohmann::json MemoryHandler::Write(const nlohmann::json& params) {
 }
 
 nlohmann::json MemoryHandler::Search(const nlohmann::json& params) {
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("pattern")) {
         throw InvalidParamsException("Missing required parameter: pattern");
     }
@@ -112,11 +112,11 @@ nlohmann::json MemoryHandler::Search(const nlohmann::json& params) {
         maxResults = params["max_results"].get<size_t>();
     }
     
-    // 搜索
+    // 鎼滅储
     auto& manager = MemoryManager::Instance();
     auto results = manager.Search(pattern, startAddr, endAddr, maxResults);
     
-    // 构建响应
+    // 鏋勫缓鍝嶅簲
     nlohmann::json resultArray = nlohmann::json::array();
     for (const auto& match : results) {
         nlohmann::json item;
@@ -134,7 +134,7 @@ nlohmann::json MemoryHandler::Search(const nlohmann::json& params) {
 }
 
 nlohmann::json MemoryHandler::GetInfo(const nlohmann::json& params) {
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("address")) {
         throw InvalidParamsException("Missing required parameter: address");
     }
@@ -142,7 +142,7 @@ nlohmann::json MemoryHandler::GetInfo(const nlohmann::json& params) {
     std::string addressStr = params["address"].get<std::string>();
     uint64_t address = StringUtils::ParseAddress(addressStr);
     
-    // 获取内存信息
+    // 鑾峰彇鍐呭瓨淇℃伅
     auto& manager = MemoryManager::Instance();
     auto info = manager.GetMemoryInfo(address);
     
@@ -150,7 +150,7 @@ nlohmann::json MemoryHandler::GetInfo(const nlohmann::json& params) {
         throw InvalidAddressException("Invalid address: " + addressStr);
     }
     
-    // 构建响应
+    // 鏋勫缓鍝嶅簲
     nlohmann::json result;
     result["queried_address"] = addressStr;
     result["base"] = StringUtils::FormatAddress(info->base);
@@ -166,11 +166,11 @@ nlohmann::json MemoryHandler::GetInfo(const nlohmann::json& params) {
 }
 
 nlohmann::json MemoryHandler::Enumerate(const nlohmann::json& params) {
-    // 枚举内存区域
+    // 鏋氫妇鍐呭瓨鍖哄煙
     auto& manager = MemoryManager::Instance();
     auto regions = manager.EnumerateRegions();
     
-    // 构建响应
+    // 鏋勫缓鍝嶅簲
     nlohmann::json regionArray = nlohmann::json::array();
     for (const auto& region : regions) {
         nlohmann::json item;
@@ -194,12 +194,12 @@ nlohmann::json MemoryHandler::Enumerate(const nlohmann::json& params) {
 }
 
 nlohmann::json MemoryHandler::Allocate(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Memory allocation requires write permission");
     }
     
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("size")) {
         throw InvalidParamsException("Missing required parameter: size");
     }
@@ -210,7 +210,7 @@ nlohmann::json MemoryHandler::Allocate(const nlohmann::json& params) {
         throw InvalidParamsException("Size cannot be zero");
     }
     
-    // 分配内存
+    // 鍒嗛厤鍐呭瓨
     auto& manager = MemoryManager::Instance();
     uint64_t address = manager.Allocate(size);
     
@@ -218,7 +218,7 @@ nlohmann::json MemoryHandler::Allocate(const nlohmann::json& params) {
         throw MCPException("Failed to allocate memory");
     }
     
-    // 构建响应
+    // 鏋勫缓鍝嶅簲
     nlohmann::json result;
     result["address"] = StringUtils::FormatAddress(address);
     result["size"] = size;
@@ -227,12 +227,12 @@ nlohmann::json MemoryHandler::Allocate(const nlohmann::json& params) {
 }
 
 nlohmann::json MemoryHandler::Free(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Memory free requires write permission");
     }
     
-    // 验证参数
+    // 楠岃瘉鍙傛暟
     if (!params.contains("address")) {
         throw InvalidParamsException("Missing required parameter: address");
     }
@@ -240,7 +240,7 @@ nlohmann::json MemoryHandler::Free(const nlohmann::json& params) {
     std::string addressStr = params["address"].get<std::string>();
     uint64_t address = StringUtils::ParseAddress(addressStr);
     
-    // 释放内存
+    // 閲婃斁鍐呭瓨
     auto& manager = MemoryManager::Instance();
     bool success = manager.Free(address);
     
@@ -248,7 +248,7 @@ nlohmann::json MemoryHandler::Free(const nlohmann::json& params) {
         throw MCPException("Failed to free memory at: " + addressStr);
     }
     
-    // 构建响应
+    // 鏋勫缓鍝嶅簲
     nlohmann::json result;
     result["success"] = true;
     result["address"] = StringUtils::FormatAddress(address);
@@ -260,8 +260,11 @@ std::vector<uint8_t> MemoryHandler::DecodeData(const std::string& data, const st
     if (encoding == "hex") {
         return StringUtils::HexToBytes(data);
     } else if (encoding == "base64") {
-        // Base64 解码（需要实现）
-        throw InvalidParamsException("Base64 encoding not yet implemented");
+        try {
+            return StringUtils::FromBase64(data);
+        } catch (const std::exception&) {
+            throw InvalidParamsException("Invalid base64 data");
+        }
     } else if (encoding == "ascii") {
         return std::vector<uint8_t>(data.begin(), data.end());
     } else {
@@ -273,8 +276,7 @@ std::string MemoryHandler::EncodeData(const std::vector<uint8_t>& data, const st
     if (encoding == "hex") {
         return StringUtils::BytesToHex(data);
     } else if (encoding == "base64") {
-        // Base64 编码（需要实现）
-        throw InvalidParamsException("Base64 encoding not yet implemented");
+        return StringUtils::ToBase64(data);
     } else if (encoding == "ascii") {
         return std::string(data.begin(), data.end());
     } else {
@@ -283,3 +285,4 @@ std::string MemoryHandler::EncodeData(const std::vector<uint8_t>& data, const st
 }
 
 } // namespace MCP
+

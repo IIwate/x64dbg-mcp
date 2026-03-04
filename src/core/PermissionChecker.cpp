@@ -15,15 +15,14 @@ PermissionChecker& PermissionChecker::Instance() {
 
 void PermissionChecker::Initialize() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    
+
     m_allowedMethods.clear();
-    
+
     auto& config = ConfigManager::Instance();
-    
+
     try {
-        // 从配置文件加载允许的方法列表
         json allowedMethods = config.Get<json>("permissions.allowed_methods", json::array());
-        
+
         if (allowedMethods.is_array()) {
             for (const auto& method : allowedMethods) {
                 if (method.is_string()) {
@@ -33,31 +32,43 @@ void PermissionChecker::Initialize() {
                 }
             }
         }
-        
-        Logger::Info("PermissionChecker initialized with {} allowed patterns", 
+
+        Logger::Info("PermissionChecker initialized with {} allowed patterns",
                     m_allowedMethods.size());
     } catch (const std::exception& e) {
         Logger::Error("Failed to load permissions from config: {}", e.what());
-        // 默认允许所有方法（不安全，仅用于开发）
-        m_allowedMethods.insert("*");
+
+        // Fallback to default config permissions instead of allow-all.
+        try {
+            json defaults = config.GetDefaultConfig();
+            json allowedMethods = defaults["permissions"]["allowed_methods"];
+            if (allowedMethods.is_array()) {
+                for (const auto& method : allowedMethods) {
+                    if (method.is_string()) {
+                        m_allowedMethods.insert(method.get<std::string>());
+                    }
+                }
+            }
+            Logger::Warning("PermissionChecker fell back to default allowed methods");
+        } catch (const std::exception& fallbackError) {
+            Logger::Error("Failed to load default permissions fallback: {}", fallbackError.what());
+        }
     }
 }
 
 bool PermissionChecker::IsMethodAllowed(const std::string& method) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    
-    // 检查精确匹配
+
     if (m_allowedMethods.count(method) > 0) {
         return true;
     }
-    
-    // 检查通配符模式
+
     for (const auto& pattern : m_allowedMethods) {
         if (MatchesPattern(pattern, method)) {
             return true;
         }
     }
-    
+
     Logger::Warning("Method not allowed: {}", method);
     return false;
 }
@@ -79,8 +90,16 @@ bool PermissionChecker::IsBreakpointModificationAllowed() const {
 }
 
 bool PermissionChecker::CanWrite() const {
-    // 通用写入权限检查,返回是否允许写入操作
-    return ConfigManager::Instance().Get<bool>("permissions.allow_write", true);
+    // Keep backward compatibility with "permissions.allow_write" while
+    // honoring fine-grained permission flags when that key is absent/false.
+    if (ConfigManager::Instance().Get<bool>("permissions.allow_write", false)) {
+        return true;
+    }
+
+    return IsMemoryWriteAllowed() ||
+           IsRegisterWriteAllowed() ||
+           IsScriptExecutionAllowed() ||
+           IsBreakpointModificationAllowed();
 }
 
 void PermissionChecker::AddAllowedMethod(const std::string& method) {
@@ -102,15 +121,10 @@ void PermissionChecker::ClearAllowedMethods() {
 }
 
 bool PermissionChecker::MatchesPattern(const std::string& pattern, const std::string& method) const {
-    // 支持简单的通配符匹配
-    // "debug.*" 匹配所有 debug 开头的方法
-    // "*" 匹配所有方法
-    
     if (pattern == "*") {
         return true;
     }
-    
-    // 使用 StringUtils 的通配符匹配
+
     return StringUtils::WildcardMatch(pattern, method);
 }
 

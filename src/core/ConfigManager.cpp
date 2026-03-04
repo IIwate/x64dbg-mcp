@@ -14,7 +14,7 @@ ConfigManager& ConfigManager::Instance() {
 json ConfigManager::CreateDefaultConfig() const {
     json config;
     
-    config["version"] = "1.0.1";
+    config["version"] = "1.0.3";
     
     // Server configuration
     config["server"]["address"] = "127.0.0.1";
@@ -49,6 +49,7 @@ json ConfigManager::CreateDefaultConfig() const {
     config["features"]["enable_heartbeat"] = true;
     config["features"]["heartbeat_interval_seconds"] = 30;
     config["features"]["enable_batch_requests"] = true;
+    config["features"]["auto_start_mcp_on_plugin_load"] = false;
     
     return config;
 }
@@ -115,7 +116,9 @@ bool ConfigManager::Load(const std::string& filePath) {
     }
     
     try {
-        file >> m_config;
+        json loadedConfig;
+        file >> loadedConfig;
+        m_config = std::move(loadedConfig);
         lock.unlock();
         Logger::Info("Configuration loaded from: {}", filePath);
         return true;
@@ -190,11 +193,21 @@ void ConfigManager::SetNestedValue(const std::string& key, const json& value) {
 }
 
 std::string ConfigManager::GetServerAddress() const {
-    return Get<std::string>("server.address", "127.0.0.1");
+    std::string address = Get<std::string>("server.address", "127.0.0.1");
+    if (address.empty()) {
+        Logger::Warning("Empty server.address value, fallback to 127.0.0.1");
+        return "127.0.0.1";
+    }
+    return address;
 }
 
 uint16_t ConfigManager::GetServerPort() const {
-    return static_cast<uint16_t>(Get<int>("server.port", 3000));
+    int port = Get<int>("server.port", 3000);
+    if (port < 1 || port > 65535) {
+        Logger::Warning("Invalid server.port value: {}, fallback to 3000", port);
+        return 3000;
+    }
+    return static_cast<uint16_t>(port);
 }
 
 bool ConfigManager::IsMemoryWriteAllowed() const {

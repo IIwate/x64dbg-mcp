@@ -2,6 +2,7 @@
 #include <nlohmann/json.hpp>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <string>
 
 namespace MCP {
@@ -103,9 +104,9 @@ public:
     
     // x64dbg 回调函数
     static void OnBreakpoint(uint64_t address);
-    static void OnException(uint32_t code, uint64_t address);
+    static void OnException(uint32_t code, uint64_t address, bool firstChance = true);
     static void OnModuleLoad(const char* name, uint64_t base, uint64_t size);
-    static void OnModuleUnload(const char* name);
+    static void OnModuleUnload(const char* name, uint64_t base = 0);
     static void OnCreateProcess();
     static void OnExitProcess();
     
@@ -120,6 +121,7 @@ private:
     
     bool m_eventsEnabled = true;
     std::map<EventType, bool> m_eventFilters;
+    mutable std::mutex m_mutex;
 };
 
 } // namespace MCP

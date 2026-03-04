@@ -1,4 +1,4 @@
-#include "DisassemblyHandler.h"
+﻿#include "DisassemblyHandler.h"
 #include "../business/DisassemblyEngine.h"
 #include "../business/SymbolResolver.h"
 #include "../core/MethodDispatcher.h"
@@ -25,7 +25,7 @@ nlohmann::json DisassemblyHandler::At(const nlohmann::json& params) {
     
     std::string addressStr = params["address"].get<std::string>();
     uint64_t address = StringUtils::ParseAddress(addressStr);
-    size_t count = params.value("count", 1);
+    size_t count = params.value("count", 10);
     
     auto& engine = DisassemblyEngine::Instance();
     
@@ -50,30 +50,70 @@ nlohmann::json DisassemblyHandler::At(const nlohmann::json& params) {
 }
 
 nlohmann::json DisassemblyHandler::Range(const nlohmann::json& params) {
-    if (!params.contains("address")) {
-        throw InvalidParamsException("Missing required parameter: address");
-    }
-    if (!params.contains("count")) {
-        throw InvalidParamsException("Missing required parameter: count");
-    }
-    
-    std::string addressStr = params["address"].get<std::string>();
-    uint64_t address = StringUtils::ParseAddress(addressStr);
-    size_t count = params["count"].get<size_t>();
-    
     auto& engine = DisassemblyEngine::Instance();
-    auto instructions = engine.DisassembleRange(address, count);
-    
+
+    std::vector<InstructionInfo> instructions;
+    uint64_t startAddress = 0;
+    uint64_t endAddress = 0;
+
+    // Tool schema mode: {start, end}
+    if (params.contains("start") || params.contains("end")) {
+        if (!params.contains("start")) {
+            throw InvalidParamsException("Missing required parameter: start");
+        }
+        if (!params.contains("end")) {
+            throw InvalidParamsException("Missing required parameter: end");
+        }
+
+        startAddress = StringUtils::ParseAddress(params["start"].get<std::string>());
+        endAddress = StringUtils::ParseAddress(params["end"].get<std::string>());
+        if (endAddress <= startAddress) {
+            throw InvalidParamsException("Invalid disassembly range: end must be greater than start");
+        }
+
+        const size_t maxInstructions = params.value("max_instructions", static_cast<size_t>(10000));
+        uint64_t current = startAddress;
+        while (current < endAddress && instructions.size() < maxInstructions) {
+            auto instr = engine.DisassembleAt(current);
+            instructions.push_back(instr);
+            const uint64_t next = instr.address + instr.size;
+            if (next <= current) {
+                break;
+            }
+            current = next;
+        }
+    } else {
+        // Backward compatible mode: {address, count}
+        if (!params.contains("address")) {
+            throw InvalidParamsException("Missing required parameter: address");
+        }
+        if (!params.contains("count")) {
+            throw InvalidParamsException("Missing required parameter: count");
+        }
+
+        std::string addressStr = params["address"].get<std::string>();
+        startAddress = StringUtils::ParseAddress(addressStr);
+        size_t count = params["count"].get<size_t>();
+        instructions = engine.DisassembleRange(startAddress, count);
+        if (!instructions.empty()) {
+            const auto& last = instructions.back();
+            endAddress = last.address + last.size;
+        } else {
+            endAddress = startAddress;
+        }
+    }
+
     nlohmann::json instrArray = nlohmann::json::array();
     for (const auto& instr : instructions) {
         instrArray.push_back(InstructionToJson(instr));
     }
-    
+
     nlohmann::json result;
-    result["address"] = StringUtils::FormatAddress(address);
+    result["start"] = StringUtils::FormatAddress(startAddress);
+    result["end"] = StringUtils::FormatAddress(endAddress);
     result["count"] = instructions.size();
     result["instructions"] = instrArray;
-    
+
     return result;
 }
 
@@ -88,13 +128,13 @@ nlohmann::json DisassemblyHandler::Function(const nlohmann::json& params) {
     auto& engine = DisassemblyEngine::Instance();
     auto& resolver = SymbolResolver::Instance();
     
-    // 获取函数起始地址
+    // 鑾峰彇鍑芥暟璧峰鍦板潃
     auto funcStart = resolver.GetFunctionStart(address);
     if (!funcStart.has_value()) {
         funcStart = address;
     }
     
-    // 反汇编函数
+    // 鍙嶆眹缂栧嚱鏁?
     auto instructions = engine.DisassembleFunction(funcStart.value());
     
     nlohmann::json instrArray = nlohmann::json::array();
@@ -107,7 +147,7 @@ nlohmann::json DisassemblyHandler::Function(const nlohmann::json& params) {
     result["count"] = instructions.size();
     result["instructions"] = instrArray;
     
-    // 如果可以获取函数结束地址
+    // 濡傛灉鍙互鑾峰彇鍑芥暟缁撴潫鍦板潃
     if (!instructions.empty()) {
         auto lastInstr = instructions.back();
         result["end"] = StringUtils::FormatAddress(lastInstr.address + lastInstr.size);
@@ -182,7 +222,7 @@ nlohmann::json SymbolHandler::Resolve(const nlohmann::json& params) {
     result["symbol"] = symbol;
     result["address"] = StringUtils::FormatAddress(address.value());
     
-    // 获取详细信息
+    // 鑾峰彇璇︾粏淇℃伅
     auto info = resolver.GetSymbolInfoFromAddress(address.value());
     if (info.has_value()) {
         result["module"] = info->module;
@@ -240,13 +280,18 @@ nlohmann::json SymbolHandler::Search(const nlohmann::json& params) {
 }
 
 nlohmann::json SymbolHandler::List(const nlohmann::json& params) {
-    if (!params.contains("module")) {
-        throw InvalidParamsException("Missing required parameter: module");
-    }
-    
-    std::string moduleName = params["module"].get<std::string>();
-    
     auto& resolver = SymbolResolver::Instance();
+    std::string moduleName;
+    if (params.contains("module") && !params["module"].is_null()) {
+        moduleName = params["module"].get<std::string>();
+    } else {
+        auto mainModule = resolver.GetModuleInfo("");
+        if (!mainModule.has_value()) {
+            throw MCPException("Failed to resolve main module", -32000);
+        }
+        moduleName = mainModule->name;
+    }
+
     auto symbols = resolver.EnumerateSymbols(moduleName);
     
     nlohmann::json symbolArray = nlohmann::json::array();
@@ -279,8 +324,8 @@ nlohmann::json SymbolHandler::Modules(const nlohmann::json& params) {
 }
 
 nlohmann::json SymbolHandler::SetLabel(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Setting label requires write permission");
     }
     
@@ -311,8 +356,8 @@ nlohmann::json SymbolHandler::SetLabel(const nlohmann::json& params) {
 }
 
 nlohmann::json SymbolHandler::SetComment(const nlohmann::json& params) {
-    // 检查写权限
-    if (!PermissionChecker::Instance().CanWrite()) {
+    // 妫€鏌ュ啓鏉冮檺
+    if (!PermissionChecker::Instance().IsMemoryWriteAllowed()) {
         throw PermissionDeniedException("Setting comment requires write permission");
     }
     
@@ -372,7 +417,7 @@ nlohmann::json SymbolHandler::SymbolInfoToJson(const SymbolInfo& symbol) {
     json["address"] = StringUtils::FormatAddress(symbol.address);
     json["module"] = symbol.module;
     
-    // 符号类型
+    // 绗﹀彿绫诲瀷
     switch (symbol.type) {
         case SymbolType::Function:
             json["type"] = "function";
@@ -416,3 +461,4 @@ nlohmann::json SymbolHandler::ModuleInfoToJson(const ModuleInfo& module) {
 }
 
 } // namespace MCP
+
