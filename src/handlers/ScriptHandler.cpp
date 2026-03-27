@@ -1,6 +1,7 @@
 #include "ScriptHandler.h"
 #include "../core/Logger.h"
 #include "../core/PermissionChecker.h"
+#include "../utils/StringUtils.h"
 #include <sstream>
 
 #ifdef XDBG_SDK_AVAILABLE
@@ -11,6 +12,70 @@
 std::string ScriptHandler::lastResult = "";
 bool ScriptHandler::lastSuccess = false;
 std::mutex ScriptHandler::resultMutex;
+
+namespace {
+
+using MCP::StringUtils::ToLower;
+using MCP::StringUtils::Trim;
+
+std::pair<std::string, std::string> SplitCommandAndArgs(const std::string& rawCommand) {
+    const std::string trimmed = Trim(rawCommand);
+    const size_t separatorPos = trimmed.find_first_of(" \t");
+
+    if (separatorPos == std::string::npos) {
+        return {trimmed, ""};
+    }
+
+    return {
+        trimmed.substr(0, separatorPos),
+        Trim(trimmed.substr(separatorPos + 1))
+    };
+}
+
+bool IsWhitelistedScriptCommand(const std::string& rawCommand, std::string& errorMessage) {
+    const auto [commandNameRaw, commandArgs] = SplitCommandAndArgs(rawCommand);
+    const std::string commandName = ToLower(commandNameRaw);
+
+    if (commandName.empty()) {
+        errorMessage = "Command cannot be empty";
+        return false;
+    }
+
+    if (commandName == "init" || commandName == "attach") {
+        if (commandArgs.empty()) {
+            errorMessage = "Command requires arguments: " + commandName;
+            return false;
+        }
+        return true;
+    }
+
+    if (commandName == "detach" || commandName == "stop") {
+        if (!commandArgs.empty()) {
+            errorMessage = "Command does not accept arguments: " + commandName;
+            return false;
+        }
+        return true;
+    }
+
+    errorMessage = "Command is not allowed. Only init, attach, detach, and stop are permitted";
+    return false;
+}
+
+json BuildScriptErrorResult(const std::string& command, const std::string& errorMessage) {
+    return {
+        {"success", false},
+        {"command", command},
+        {"error", errorMessage}
+    };
+}
+
+} // namespace
+
+void ScriptHandler::UpdateLastResult(bool success, const std::string& resultText) {
+    std::lock_guard<std::mutex> lock(resultMutex);
+    lastSuccess = success;
+    lastResult = resultText;
+}
 
 json ScriptHandler::execute(const json& params) {
     try {
@@ -29,15 +94,18 @@ json ScriptHandler::execute(const json& params) {
         }
 
         std::string command = params["command"];
+        std::string validationError;
+        if (!IsWhitelistedScriptCommand(command, validationError)) {
+            UpdateLastResult(false, validationError);
+            MCP::Logger::Warning("Blocked script command: {} ({})", command, validationError);
+            return BuildScriptErrorResult(command, validationError);
+        }
+
         MCP::Logger::Debug("Executing script command: {}", command);
 
         bool success = DbgCmdExec(command.c_str());
 
-        {
-            std::lock_guard<std::mutex> lock(resultMutex);
-            lastSuccess = success;
-            lastResult = success ? "Command executed successfully" : "Command execution failed";
-        }
+        UpdateLastResult(success, success ? "Command executed successfully" : "Command execution failed");
 
         json result = {
             {"success", success},
@@ -107,6 +175,21 @@ json ScriptHandler::executeBatch(const json& params) {
             }
 
             std::string command = cmd;
+            std::string validationError;
+            if (!IsWhitelistedScriptCommand(command, validationError)) {
+                results.push_back({
+                    {"success", false},
+                    {"command", command},
+                    {"error", validationError}
+                });
+                allSuccess = false;
+                failCount++;
+                if (stopOnError) {
+                    break;
+                }
+                continue;
+            }
+
             bool success = DbgCmdExec(command.c_str());
 
             json cmdResult = {
@@ -129,14 +212,10 @@ json ScriptHandler::executeBatch(const json& params) {
             results.push_back(cmdResult);
         }
 
-        {
-            std::lock_guard<std::mutex> lock(resultMutex);
-            lastSuccess = allSuccess;
-            if (allSuccess) {
-                lastResult = "All " + std::to_string(successCount) + " commands executed successfully";
-            } else {
-                lastResult = std::to_string(successCount) + " succeeded, " + std::to_string(failCount) + " failed";
-            }
+        if (allSuccess) {
+            UpdateLastResult(true, "All " + std::to_string(successCount) + " commands executed successfully");
+        } else {
+            UpdateLastResult(false, std::to_string(successCount) + " succeeded, " + std::to_string(failCount) + " failed");
         }
 
         return {

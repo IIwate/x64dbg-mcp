@@ -18,6 +18,8 @@ public:
     static json getLastResult(const json& params);
 
 private:
+    static void UpdateLastResult(bool success, const std::string& resultText);
+
     static std::string lastResult;
     static bool lastSuccess;
     static std::mutex resultMutex;
